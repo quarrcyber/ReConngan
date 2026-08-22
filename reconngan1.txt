@@ -1,0 +1,743 @@
+import json
+import argparse
+import httpx
+from dataclasses import dataclass, asdict
+from collections.abc import Callable
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.markup import escape
+
+console = Console()
+
+@dataclass
+class HeaderRule:
+    name: str
+    severity: str
+    weight: int	
+    attack: str
+    validator: Callable[[str | None], tuple[str, str]]
+
+@dataclass
+class Finding:
+    header: str
+    status: str
+    severity: str
+    weight: int
+    note: str
+    attack: str
+    evidence: str
+#-----------------------------------------STYLE--------------------------------------------------
+def status_style(status: str) -> str:
+
+    if status == "OK":
+        return "green"
+
+    if status == "WEAK":
+        return "yellow"
+
+    if status == "MISSING":
+        return "red"
+
+    return "white"
+#--------------------style_grade------------------
+def grade_style(grade: str) -> str:
+
+    if grade == "A":
+        return "green"
+
+    if grade == "B":
+        return "green"
+
+    if grade == "C":
+        return "yellow"
+
+    if grade == "D":
+        return "dark_orange"
+
+    return "red"
+def severity_style(severity: str) -> str:
+
+    if severity == "HIGH":
+        return "red"
+
+    if severity == "MEDIUM":
+        return "yellow"
+
+    if severity == "LOW":
+        return "cyan"
+
+    return "white"
+#-------------------normalize_url---------------------
+def normalize_url(target: str) -> str:
+    target = target.strip()
+
+    if not target.startswith(("http://", "https://")):
+        target = "https://" + target
+
+    return target
+#------------------fetch_url--------------------------
+def fetch_url(
+    url: str,
+    timeout: float = 10.0,
+    follow_redirects: bool = True,
+) -> httpx.Response:
+
+    return httpx.get(
+        url,
+        follow_redirects=follow_redirects,
+        timeout=timeout,
+    )
+#--------------------config validator hsts--------------------------------
+def validate_hsts(value: str | None) -> tuple[str, str]:
+
+    if value is None:
+        return "MISSING", "Header is not set"
+
+    directives = [
+        part.strip()
+        for part in value.split(";")
+    ]
+
+    max_age = None
+
+    for directive in directives:
+        if directive.lower().startswith("max-age="):
+            max_age = directive
+            break
+
+    if max_age is None:
+        return "WEAK", "max-age directive is missing"
+
+    try:
+        seconds = int(
+            max_age.split("=", 1)[1].strip()
+        )
+
+    except ValueError:
+        return "WEAK", "max-age value is invalid"
+
+    if seconds <= 0:
+        return "WEAK", "max-age=0 disables HSTS"
+
+    return "OK", f"HSTS enabled with max-age={seconds}"
+#-----------------analyze_header--------------------------
+def analyze_headers(headers) -> list[Finding]:
+
+    normalized_headers = {
+        name.lower(): value
+        for name, value in headers.items()
+    }
+
+    findings = []
+
+    for rule in SECURITY_RULES:
+
+        value = normalized_headers.get(
+            rule.name.lower()
+        )
+
+        status, note = rule.validator(value)
+
+        if value is None:
+            evidence = "Header not present"
+        else:
+            evidence = f"{rule.name}: {value}"
+
+        finding = Finding(
+            header=rule.name,
+            status=status,
+            severity=rule.severity,
+            weight=rule.weight,
+            note=note,
+            attack=rule.attack,
+            evidence=evidence,
+        )
+
+        findings.append(finding)
+
+    return findings
+#------------------calculate_score---------------------------
+def calculate_score(findings: list[Finding]) -> float:
+    score = 0.0
+
+    for finding in findings:
+
+        if finding.status == "OK":
+            score += finding.weight
+
+        elif finding.status == "WEAK":
+            score += finding.weight * 0.5
+
+    return score
+#--------------grade---------------------
+def calculate_grade(score: float) -> str:
+
+    if score >= 90:
+        return "A"
+
+    if score >= 80:
+        return "B"
+
+    if score >= 70:
+        return "C"
+
+    if score >= 60:
+        return "D"
+
+    return "F"
+GRADE_RANK = {
+    "F": 0,
+    "D": 1,
+    "C": 2,
+    "B": 3,
+    "A": 4,
+}
+
+
+def grade_meets_threshold(
+    actual_grade: str,
+    minimum_grade: str,
+) -> bool:
+
+    actual_grade = actual_grade.upper()
+    minimum_grade = minimum_grade.upper()
+
+    return (
+        GRADE_RANK[actual_grade]
+        >= GRADE_RANK[minimum_grade]
+    )
+#---------------------------validate-x-content-type-options------------------
+def validate_x_content_type_options(
+    value: str | None
+) -> tuple[str, str]:
+
+    if value is None:
+        return "MISSING", "Header is not set"
+
+    if value.strip().lower() == "nosniff":
+        return "OK", "MIME sniffing protection enabled"
+
+    return (
+        "WEAK",
+        f"Unexpected value: {value}"
+    )
+#----------------------x-frame-options------------------------
+def validate_x_frame_options(
+    value: str | None
+) -> tuple[str, str]:
+
+    if value is None:
+        return "MISSING", "Header is not set"
+
+    normalized = value.strip().upper()
+
+    if normalized == "DENY":
+        return "OK", "Framing is completely blocked"
+
+    if normalized == "SAMEORIGIN":
+        return "OK", "Framing allowed only from same origin"
+
+    if normalized.startswith("ALLOW-FROM"):
+        return "WEAK", "ALLOW-FROM is obsolete and not widely supported"
+
+    return "WEAK", f"Unexpected value: {value}"
+#------------------referrer policy-----------------------
+def validate_referrer_policy(
+    value: str | None
+) -> tuple[str, str]:
+
+    if value is None:
+        return "MISSING", "Header is not set"
+
+    strong_policies = {
+        "no-referrer",
+        "same-origin",
+        "strict-origin",
+        "strict-origin-when-cross-origin",
+    }
+
+    weak_policies = {
+        "origin",
+        "origin-when-cross-origin",
+        "no-referrer-when-downgrade",
+        "unsafe-url",
+    }
+
+    policies = [
+        item.strip().lower()
+        for item in value.split(",")
+        if item.strip()
+    ]
+
+    if not policies:
+        return "WEAK", "Header is empty"
+
+    for policy in reversed(policies):
+        if policy in strong_policies:
+            return "OK", f"Recognized policy: {policy}"
+
+        if policy in weak_policies:
+            return "WEAK", f"Potentially permissive policy: {policy}"
+
+    return "WEAK", f"Unrecognized policy: {value}"
+#---------------------Permissions-Policy------------------------
+def validate_permissions_policy(
+    value: str | None
+) -> tuple[str, str]:
+
+    if value is None:
+        return "MISSING", "Header is not set"
+
+    policy = value.strip()
+
+    if not policy:
+        return "WEAK", "Header is empty"
+
+    if "=" not in policy:
+        return "WEAK", "Header does not contain any policy directives"
+
+    return "OK", "Permissions-Policy is present"
+#----------------------validator CSP---------------------------
+def validate_csp(
+    value: str | None
+) -> tuple[str, str]:
+
+    if value is None:
+        return "MISSING", "Header is not set"
+
+    policy = value.strip()
+
+    if not policy:
+        return "WEAK", "Header is empty"
+
+    normalized = policy.lower()
+
+    problems = []
+
+    if "'unsafe-inline'" in normalized:
+        problems.append("unsafe-inline")
+
+    if "'unsafe-eval'" in normalized:
+        problems.append("unsafe-eval")
+
+    if "script-src *" in normalized:
+        problems.append("wildcard script-src")
+
+    if problems:
+        return (
+            "WEAK",
+            "Potentially weak directives: "
+            + ", ".join(problems)
+        )
+
+    return "OK", "CSP is present with no basic weak patterns detected"
+#------------------truncate_text----------------------
+def truncate_text(
+    text: str,
+    max_length: int = 250
+) -> str:
+
+    if len(text) <= max_length:
+        return text
+
+    return text[:max_length] + "..."
+#-------------------------report---------------------
+def print_report(
+    findings: list[Finding],
+    score: float,
+    grade: str
+) -> None:
+
+    table = Table(
+    title="Security Headers",
+    show_header=True,
+    header_style="bold"
+    )
+
+    table.add_column(
+        "Header",
+        no_wrap=True
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True
+    )
+
+    table.add_column(
+        "Severity",
+        no_wrap=True
+    )
+
+    table.add_column(
+        "Note",
+        overflow="fold"
+    )
+    for finding in findings:
+
+        status_color = status_style(
+            finding.status
+        )
+
+        severity_color = severity_style(
+            finding.severity
+        )
+
+        table.add_row(
+            finding.header,
+            (
+                f"[{status_color}]"
+                f"{finding.status}"
+                f"[/{status_color}]"
+            ),
+            (
+                f"[{severity_color}]"
+                f"{finding.severity}"
+                f"[/{severity_color}]"
+            ),
+            finding.note,
+        )
+
+
+    console.print(table)
+    grade_color = grade_style(grade)
+
+    result_text = (
+        f"Score: {score:.1f} / 100\n"
+        f"Grade: [{grade_color}]{grade}[/{grade_color}]"
+    )
+
+    console.print(
+        Panel(
+            result_text,
+            title="Result",
+            expand=False,
+        )
+    )
+    # Chỉ lấy các finding có vấn đề
+    problem_findings = [
+        finding
+        for finding in findings
+        if finding.status != "OK"
+    ]
+
+    if problem_findings:
+
+        console.print("\n[bold]Findings[/bold]")
+
+        for finding in problem_findings:
+
+            status_color = status_style(
+                finding.status
+            )
+
+            evidence_preview = escape(
+                truncate_text(finding.evidence)
+            )
+
+            reason_text = escape(finding.note)
+            attack_text = escape(finding.attack)
+
+            console.print()
+
+            console.print(
+                f"[bold]"
+                f"[{severity_color}]"
+                f"[{finding.severity}]"
+                f"[/{severity_color}] "
+                f"{finding.header}"
+                f"[/bold]"
+            )
+            console.print(
+                f"[bold]Status:[/bold] "
+                f"[{status_color}]"
+                f"{finding.status}"
+                f"[/{status_color}]"
+            )
+
+            console.print(
+                f"[bold]Attack:[/bold] "
+                f"{attack_text}"
+            )
+
+            console.print(
+                f"[bold]Reason:[/bold] "
+                f"{reason_text}"
+            )
+
+            console.print(
+                f"[bold]Evidence:[/bold] "
+                f"{evidence_preview}"
+            )
+#--------------------http_status-----------------
+def http_status_style(
+    status_code: int
+) -> str:
+
+    if 200 <= status_code < 300:
+        return "green"
+
+    if 300 <= status_code < 400:
+        return "cyan"
+
+    if 400 <= status_code < 500:
+        return "yellow"
+
+    if status_code >= 500:
+        return "red"
+
+    return "white"
+#----------------------info--------------------------
+def print_target_info(
+    url: str,
+    status_code: int,
+    final_url: str
+) -> None:
+
+    status_color = http_status_style(
+        status_code
+    )
+
+    console.print()
+
+    console.print(
+        f"[bold]Target:[/bold]    "
+        f"{escape(url)}"
+    )
+
+    console.print(
+        f"[bold]Status:[/bold]    "
+        f"[{status_color}]"
+        f"{status_code}"
+        f"[/{status_color}]"
+    )
+
+    console.print(
+        f"[bold]Final URL:[/bold] "
+        f"{escape(final_url)}"
+    )
+#-----------------------json------------------------------
+def build_report_data(
+    target: str,
+    final_url: str,
+    status_code: int,
+    findings: list[Finding],
+    score: float,
+    grade: str,
+) -> dict:
+
+    return {
+        "target": target,
+        "final_url": final_url,
+        "status_code": status_code,
+        "score": score,
+        "grade": grade,
+        "findings": [
+            asdict(finding)
+            for finding in findings
+        ],
+    }
+def write_json_report(
+    data: dict,
+    file_path: str,
+) -> None:
+
+    with open(
+        file_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            data,
+            file,
+            indent=4,
+            ensure_ascii=False,
+        )
+#-----------------------parse_arg----------------------------
+def parse_args():
+
+    parser = argparse.ArgumentParser(
+        prog="reconngan",
+        description=(
+            "ReConngan - HTTP security headers "
+            "reconnaissance scanner"
+        ),
+    )
+
+    parser.add_argument(
+        "target",
+        help="Target URL or domain to scan",
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="ReConngan 0.1.1",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Request timeout in seconds (default: 10)",
+    )
+
+    parser.add_argument(
+        "--no-redirect",
+        action="store_true",
+        help="Do not follow HTTP redirects",
+    )
+
+    parser.add_argument(
+        "--json",
+        metavar="FILE",
+        help="Write scan results to a JSON file",
+    )
+    parser.add_argument(
+        "--fail-under",
+        type=str.upper,
+        choices=["A", "B", "C", "D", "F"],
+        metavar="GRADE",
+        help=(
+            "Exit with code 1 if the scan grade "
+            "is below this grade"
+        ),
+    )
+    return parser.parse_args()
+#-----------------------main---------------------------------
+def main() -> int:
+
+    args = parse_args()
+
+    target = args.target
+
+    url = normalize_url(target)
+
+    try:
+        response = fetch_url(
+            url,
+            timeout=args.timeout,
+            follow_redirects=not args.no_redirect,    
+        )
+    except httpx.TimeoutException:
+        console.print(
+            "[red][!] Request timed out.[/red]"
+        )
+        return 3
+
+    except httpx.RequestError as exc:
+        console.print(
+            f"[red][!] Request failed: "
+            f"{escape(str(exc))}[/red]"
+        )
+        return 3
+
+    print_target_info(
+        url,
+        response.status_code,
+        str(response.url)
+    )
+
+
+    findings = analyze_headers(
+        response.headers
+    )
+#score
+    score = calculate_score(findings)
+    grade = calculate_grade(score)
+
+    print_report(
+        findings,
+        score,
+        grade
+    )
+    if args.json:
+
+        report_data = build_report_data(
+            target=url,
+            final_url=str(response.url),
+            status_code=response.status_code,
+            findings=findings,
+            score=score,
+            grade=grade,
+        )
+
+        write_json_report(
+            report_data,
+            args.json,
+        )
+
+        console.print(
+            f"\n[green][+] JSON report saved to "
+            f"{escape(args.json)}[/green]"
+        )
+    if args.fail_under:
+
+        if not grade_meets_threshold(
+            grade,
+            args.fail_under,
+        ):
+
+            console.print(
+                f"\n[red][!] Grade {grade} "
+                f"is below required grade "
+                f"{args.fail_under}.[/red]"
+            )
+
+            return 1
+    return 0
+#---------------RULES--------------------
+SECURITY_RULES = [
+    HeaderRule(
+        name="Strict-Transport-Security",
+        severity="HIGH",
+        weight=20,
+        attack="HTTPS downgrade / SSL stripping",
+        validator=validate_hsts,
+    ),
+
+    HeaderRule(
+        name="X-Content-Type-Options",
+        severity="MEDIUM",
+        weight=15,
+        attack="MIME sniffing",
+        validator=validate_x_content_type_options,
+    ),
+    
+    HeaderRule(
+        name="X-Frame-Options",
+        severity="MEDIUM",
+        weight=15,
+	attack="Clickjacking",
+        validator=validate_x_frame_options,
+    ),
+
+    HeaderRule(
+    name="Referrer-Policy",
+    severity="LOW",
+    weight=15,
+    attack="Referrer information leakage",
+    validator=validate_referrer_policy,
+),
+    HeaderRule(
+    name="Permissions-Policy",
+    severity="LOW",
+    weight=10,
+    attack="Browser feature abuse / overly permissive browser capabilities",
+    validator=validate_permissions_policy,
+),
+    HeaderRule(
+    name="Content-Security-Policy",
+    severity="HIGH",
+    weight=25,
+    attack="XSS / content injection",
+    validator=validate_csp,
+),
+]
+#if __name__ == "__main__":
+#    main()
+#===========================================
+#test offline part
+if __name__ == "__main__":
+    raise SystemExit(main())

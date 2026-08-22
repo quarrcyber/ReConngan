@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: reconngan
+Version: 0.1.0
+Summary: Evidence-driven HTTP security reconnaissance scanner
+Requires-Python: >=3.10
+Requires-Dist: httpx
+Requires-Dist: rich
