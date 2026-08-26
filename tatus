@@ -1,0 +1,648 @@
+[1mdiff --git a/reconngan/__pycache__/app.cpython-313.pyc b/reconngan/__pycache__/app.cpython-313.pyc[m
+[1mindex ecb062e..f7d0158 100644[m
+Binary files a/reconngan/__pycache__/app.cpython-313.pyc and b/reconngan/__pycache__/app.cpython-313.pyc differ
+[1mdiff --git a/reconngan/__pycache__/cli.cpython-313.pyc b/reconngan/__pycache__/cli.cpython-313.pyc[m
+[1mindex bc9a071..a478d27 100644[m
+Binary files a/reconngan/__pycache__/cli.cpython-313.pyc and b/reconngan/__pycache__/cli.cpython-313.pyc differ
+[1mdiff --git a/reconngan/__pycache__/web_resources.cpython-313.pyc b/reconngan/__pycache__/web_resources.cpython-313.pyc[m
+[1mindex 2011556..64444d8 100644[m
+Binary files a/reconngan/__pycache__/web_resources.cpython-313.pyc and b/reconngan/__pycache__/web_resources.cpython-313.pyc differ
+[1mdiff --git a/reconngan/app.py b/reconngan/app.py[m
+[1mindex 1d7bf1b..3a8e94f 100644[m
+[1m--- a/reconngan/app.py[m
+[1m+++ b/reconngan/app.py[m
+[36m@@ -4,7 +4,11 @@[m [mimport httpx[m
+ from rich.console import Console[m
+ from rich.markup import escape[m
+ #sub files[m
+[31m-from .models import HeaderRule, Finding[m
+[32m+[m[32mfrom .models import ([m
+[32m+[m[32m    HeaderRule,[m
+[32m+[m[32m    Finding,[m
+[32m+[m[32m    WebResourceAnalysis,[m
+[32m+[m[32m)[m
+ from .headers import analyze_headers[m
+ from .scoring import ([m
+     calculate_score,[m
+[36m@@ -55,21 +59,22 @@[m [mconsole = Console()[m
+ [m
+ #-----------------------main---------------------------------[m
+ def main() -> int:[m
+[31m-[m
+     args = parse_args()[m
+ [m
+     target = args.target[m
+[31m-[m
+     url = normalize_url(target)[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 1. FETCH MAIN TARGET[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+     try:[m
+         response = fetch_url([m
+             url,[m
+             timeout=args.timeout,[m
+[31m-            follow_redirects=not args.no_redirect,    [m
+[32m+[m[32m            follow_redirects=not args.no_redirect,[m
+         )[m
+[31m-# =========================================================[m
+[31m-# 1. FETCH MAIN TARGET[m
+[31m-# =========================================================[m
+[32m+[m
+     except httpx.TimeoutException:[m
+         console.print([m
+             "[red][!] Request timed out.[/red]"[m
+[36m@@ -83,10 +88,9 @@[m [mdef main() -> int:[m
+         )[m
+         return 3[m
+ [m
+[31m-[m
+[31m-# =========================================================[m
+[31m-# 2. TARGET INFORMATION[m
+[31m-# =========================================================[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 2. TARGET INFORMATION[m
+[32m+[m[32m    # =========================================================[m
+ [m
+     print_target_info([m
+         url,[m
+[36m@@ -94,23 +98,9 @@[m [mdef main() -> int:[m
+         str(response.url),[m
+     )[m
+ [m
+[31m-[m
+[31m-# =========================================================[m
+[31m-# 3. REDIRECT RECONNAISSANCE[m
+[31m-# =========================================================[m
+[31m-[m
+[31m-    redirect_chain = collect_redirect_chain([m
+[31m-        response[m
+[31m-    )[m
+[31m-[m
+[31m-    print_redirect_chain([m
+[31m-        redirect_chain[m
+[31m-    )[m
+[31m-[m
+[31m-[m
+[31m-# =========================================================[m
+[31m-# 4. HTTP METADATA[m
+[31m-# =========================================================[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 3. CORE: HTTP INFORMATION[m
+[32m+[m[32m    # =========================================================[m
+ [m
+     http_metadata = collect_http_metadata([m
+         response[m
+[36m@@ -120,31 +110,9 @@[m [mdef main() -> int:[m
+         http_metadata[m
+     )[m
+ [m
+[31m-[m
+[31m-# =========================================================[m
+[31m-# 5. COOKIE RECONNAISSANCE[m
+[31m-# =========================================================[m
+[31m-[m
+[31m-    cookies = collect_http_cookies([m
+[31m-        response[m
+[31m-    )[m
+[31m-[m
+[31m-    print_http_cookies([m
+[31m-        cookies[m
+[31m-    )[m
+[31m-[m
+[31m-    cookie_findings = analyze_cookie_security([m
+[31m-        cookies[m
+[31m-    )[m
+[31m-[m
+[31m-    print_cookie_findings([m
+[31m-        cookie_findings[m
+[31m-    )[m
+[31m-[m
+[31m-[m
+[31m-# =========================================================[m
+[31m-# 6. SECURITY HEADER ANALYSIS[m
+[31m-# =========================================================[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 4. CORE: SECURITY HEADERS[m
+[32m+[m[32m    # =========================================================[m
+ [m
+     findings = analyze_headers([m
+         response.headers[m
+[36m@@ -164,70 +132,188 @@[m [mdef main() -> int:[m
+         grade,[m
+     )[m
+ [m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # OPTIONAL MODULE STATE[m
+[32m+[m[32m    #[m
+[32m+[m[32m    # These defaults are important for JSON output.[m
+[32m+[m[32m    # If a module was not executed, its result stays empty.[m
+[32m+[m[32m    # =========================================================[m
+ [m
+[31m-# =========================================================[m
+[31m-# 7. KNOWN WEB RESOURCE DISCOVERY[m
+[31m-# =========================================================[m
+[32m+[m[32m    redirect_chain = [][m
+ [m
+[31m-    web_resources = collect_web_resources([m
+[31m-        base_url=str(response.url),[m
+[31m-        timeout=args.timeout,[m
+[31m-    )[m
+[32m+[m[32m    cookies = [][m
+[32m+[m[32m    cookie_findings = [][m
+[32m+[m
+[32m+[m[32m    web_resources = [][m
+ [m
+[31m-    print_web_resources([m
+[31m-        web_resources[m
+[32m+[m[32m    web_analysis = WebResourceAnalysis([m
+[32m+[m[32m        robots=None,[m
+[32m+[m[32m        sitemap=None,[m
+[32m+[m[32m        security_txt=None,[m
+[32m+[m[32m        candidates=[],[m
+     )[m
+ [m
+[32m+[m[32m    security_txt_info = None[m
+ [m
+[31m-# =========================================================[m
+[31m-# 8. ANALYZE DISCOVERED WEB RESOURCES[m
+[31m-# =========================================================[m
+[32m+[m[32m    content_results = [][m
+ [m
+[31m-    web_analysis = analyze_web_resources([m
+[31m-        base_url=str(response.url),[m
+[31m-        resources=web_resources,[m
+[31m-        redirect_chain=redirect_chain,[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 5. OPTIONAL: REDIRECT RECONNAISSANCE[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    needs_redirect_data = ([m
+[32m+[m[32m        args.redirects[m
+[32m+[m[32m        or args.candidates[m
+[32m+[m[32m        or args.content[m
+[32m+[m[32m        or args.all_modules[m
+     )[m
+ [m
+[32m+[m[32m    if needs_redirect_data:[m
+[32m+[m[32m        redirect_chain = collect_redirect_chain([m
+[32m+[m[32m            response[m
+[32m+[m[32m        )[m
+ [m
+[31m-# =========================================================[m
+[31m-# 9. PARSED RESOURCE INFORMATION[m
+[31m-# =========================================================[m
+[32m+[m[32m    if args.redirects or args.all_modules:[m
+[32m+[m[32m        print_redirect_chain([m
+[32m+[m[32m            redirect_chain[m
+[32m+[m[32m        )[m
+ [m
+[31m-    print_sitemap_info([m
+[31m-        web_analysis.sitemap[m
+[31m-    )[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 6. OPTIONAL: COOKIE SECURITY[m
+[32m+[m[32m    # =========================================================[m
+ [m
+[31m-    print_security_txt_info([m
+[31m-        web_analysis.security_txt[m
+[31m-    )[m
+[32m+[m[32m    if args.cookies or args.all_modules:[m
+ [m
+[32m+[m[32m        cookies = collect_http_cookies([m
+[32m+[m[32m            response[m
+[32m+[m[32m        )[m
+ [m
+[31m-# =========================================================[m
+[31m-# 10. DISCOVERED URL CANDIDATES[m
+[31m-# =========================================================[m
+[32m+[m[32m        print_http_cookies([m
+[32m+[m[32m            cookies[m
+[32m+[m[32m        )[m
+ [m
+[31m-    print_url_candidates([m
+[31m-        web_analysis.candidates[m
+[31m-    )[m
+[32m+[m[32m        cookie_findings = analyze_cookie_security([m
+[32m+[m[32m            cookies[m
+[32m+[m[32m        )[m
+ [m
+[32m+[m[32m        print_cookie_findings([m
+[32m+[m[32m            cookie_findings[m
+[32m+[m[32m        )[m
+ [m
+[31m-# =========================================================[m
+[31m-# 11. VERIFY DISCOVERED CONTENT[m
+[31m-# =========================================================[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 7. PLAN WEB RESOURCE REQUESTS[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    resource_names: set[str] = set()[m
+[32m+[m
+[32m+[m[32m    # --resources, --candidates and --content require the[m
+[32m+[m[32m    # complete known-resource discovery set.[m
+[32m+[m[32m    if ([m
+[32m+[m[32m        args.resources[m
+[32m+[m[32m        or args.candidates[m
+[32m+[m[32m        or args.content[m
+[32m+[m[32m        or args.all_modules[m
+[32m+[m[32m    ):[m
+[32m+[m[32m        resource_names.update([m
+[32m+[m[32m            {[m
+[32m+[m[32m                "robots.txt",[m
+[32m+[m[32m                "sitemap.xml",[m
+[32m+[m[32m                "security.txt",[m
+[32m+[m[32m            }[m
+[32m+[m[32m        )[m
+ [m
+[31m-    content_results = discover_content([m
+[31m-        base_url=str(response.url),[m
+[31m-        candidates=web_analysis.candidates,[m
+[31m-        timeout=args.timeout,[m
+[31m-    )[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        # Individual resource flags should only request[m
+[32m+[m[32m        # the resource explicitly requested by the user.[m
+[32m+[m
+[32m+[m[32m        if args.sitemap:[m
+[32m+[m[32m            resource_names.add([m
+[32m+[m[32m                "sitemap.xml"[m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m        if args.security_txt:[m
+[32m+[m[32m            resource_names.add([m
+[32m+[m[32m                "security.txt"[m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 8. OPTIONAL: WEB RESOURCE DISCOVERY[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    if resource_names:[m
+[32m+[m
+[32m+[m[32m        web_resources = collect_web_resources([m
+[32m+[m[32m            base_url=str(response.url),[m
+[32m+[m[32m            timeout=args.timeout,[m
+[32m+[m[32m            names=resource_names,[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m        web_analysis = analyze_web_resources([m
+[32m+[m[32m            base_url=str(response.url),[m
+[32m+[m[32m            resources=web_resources,[m
+[32m+[m[32m            redirect_chain=redirect_chain,[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m        security_txt_info = ([m
+[32m+[m[32m            web_analysis.security_txt[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 9. OPTIONAL OUTPUT: KNOWN WEB RESOURCES[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    if args.resources or args.all_modules:[m
+[32m+[m[32m        print_web_resources([m
+[32m+[m[32m            web_resources[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 10. OPTIONAL OUTPUT: SITEMAP[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    if args.sitemap or args.all_modules:[m
+[32m+[m[32m        print_sitemap_info([m
+[32m+[m[32m            web_analysis.sitemap[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 11. OPTIONAL OUTPUT: SECURITY.TXT[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    if args.security_txt or args.all_modules:[m
+[32m+[m[32m        print_security_txt_info([m
+[32m+[m[32m            web_analysis.security_txt[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 12. OPTIONAL OUTPUT: URL CANDIDATES[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    if args.candidates or args.all_modules:[m
+[32m+[m[32m        print_url_candidates([m
+[32m+[m[32m            web_analysis.candidates[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 13. OPTIONAL: ACTIVE CONTENT DISCOVERY[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    if args.content or args.all_modules:[m
+[32m+[m
+[32m+[m[32m        content_results = discover_content([m
+[32m+[m[32m            base_url=str(response.url),[m
+[32m+[m[32m            candidates=web_analysis.candidates,[m
+[32m+[m[32m            timeout=args.timeout,[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m        print_content_results([m
+[32m+[m[32m            content_results[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 14. JSON REPORT[m
+[32m+[m[32m    # =========================================================[m
+ [m
+[31m-    print_content_results([m
+[31m-        content_results[m
+[31m-    )[m
+[31m-# =========================================================[m
+[31m-# JSON REPORT[m
+[31m-# =========================================================[m
+     if args.json:[m
+ [m
+         report_data = build_report_data([m
+[36m@@ -240,7 +326,7 @@[m [mdef main() -> int:[m
+             cookies=cookies,[m
+             cookie_findings=cookie_findings,[m
+             web_resources=web_resources,[m
+[31m-            web_analysis=web_analysis,            [m
+[32m+[m[32m            web_analysis=web_analysis,[m
+             content_results=content_results,[m
+             findings=findings,[m
+             score=score,[m
+[36m@@ -256,13 +342,17 @@[m [mdef main() -> int:[m
+             f"\n[green][+] JSON report saved to "[m
+             f"{escape(args.json)}[/green]"[m
+         )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # 15. FAIL-UNDER POLICY[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+     if args.fail_under:[m
+ [m
+         if not grade_meets_threshold([m
+             grade,[m
+             args.fail_under,[m
+         ):[m
+[31m-[m
+             console.print([m
+                 f"\n[red][!] Grade {grade} "[m
+                 f"is below required grade "[m
+[36m@@ -270,82 +360,7 @@[m [mdef main() -> int:[m
+             )[m
+ [m
+             return 1[m
+[31m-    return 0[m
+ [m
+[32m+[m[32m    return 0[m
+ #===========================================[m
+ #test offline part[m
+[31m-def test_content_discovery_offline():[m
+[31m-[m
+[31m-    print([m
+[31m-        "\n[OFFLINE TEST] Content discovery"[m
+[31m-    )[m
+[31m-    print("-" * 55)[m
+[31m-[m
+[31m-    from .content_discovery import ([m
+[31m-        classify_status,[m
+[31m-        response_similarity,[m
+[31m-        looks_like_soft404,[m
+[31m-    )[m
+[31m-[m
+[31m-    baseline = ([m
+[31m-        "<html>"[m
+[31m-        "<h1>Page not found</h1>"[m
+[31m-        "</html>"[m
+[31m-    )[m
+[31m-[m
+[31m-    candidate = ([m
+[31m-        "<html>"[m
+[31m-        "<h1>Page not found</h1>"[m
+[31m-        "</html>"[m
+[31m-    )[m
+[31m-[m
+[31m-    checks = [[m
+[31m-        ([m
+[31m-            "200 FOUND",[m
+[31m-            classify_status(200)[m
+[31m-            == "FOUND",[m
+[31m-        ),[m
+[31m-[m
+[31m-        ([m
+[31m-            "302 REDIRECT",[m
+[31m-            classify_status(302)[m
+[31m-            == "REDIRECT",[m
+[31m-        ),[m
+[31m-[m
+[31m-        ([m
+[31m-            "403 PROTECTED",[m
+[31m-            classify_status(403)[m
+[31m-            == "PROTECTED",[m
+[31m-        ),[m
+[31m-[m
+[31m-        ([m
+[31m-            "404 NOT_FOUND",[m
+[31m-            classify_status(404)[m
+[31m-            == "NOT_FOUND",[m
+[31m-        ),[m
+[31m-[m
+[31m-        ([m
+[31m-            "similarity exact",[m
+[31m-            response_similarity([m
+[31m-                baseline,[m
+[31m-                candidate,[m
+[31m-            ) == 1.0,[m
+[31m-        ),[m
+[31m-[m
+[31m-        ([m
+[31m-            "soft404 detected",[m
+[31m-            looks_like_soft404([m
+[31m-                status_code=200,[m
+[31m-                body=candidate,[m
+[31m-                baseline_status=200,[m
+[31m-                baseline_body=baseline,[m
+[31m-            ),[m
+[31m-        ),[m
+[31m-    ][m
+[31m-[m
+[31m-    for name, passed in checks:[m
+[31m-[m
+[31m-        print([m
+[31m-            f"{name:<28}"[m
+[31m-            f"{'[PASS]' if passed else '[FAIL]'}"[m
+[31m-        )[m
+[1mdiff --git a/reconngan/cli.py b/reconngan/cli.py[m
+[1mindex 9b77c1f..e744975 100644[m
+[1m--- a/reconngan/cli.py[m
+[1m+++ b/reconngan/cli.py[m
+[36m@@ -1,15 +1,28 @@[m
+ import argparse[m
+ [m
+[31m-def parse_args():[m
+ [m
+[32m+[m[32mdef parse_args():[m
+     parser = argparse.ArgumentParser([m
+         prog="reconngan",[m
+         description=([m
+[31m-            "ReConngan - HTTP security headers "[m
+[32m+[m[32m            "Evidence-driven HTTP security "[m
+             "reconnaissance scanner"[m
+         ),[m
+[32m+[m[32m        epilog=([m
+[32m+[m[32m            "Examples:\n"[m
+[32m+[m[32m            "  reconngan example.com\n"[m
+[32m+[m[32m            "  reconngan example.com --cookies\n"[m
+[32m+[m[32m            "  reconngan example.com --sitemap\n"[m
+[32m+[m[32m            "  reconngan example.com --content\n"[m
+[32m+[m[32m            "  reconngan example.com --all"[m
+[32m+[m[32m        ),[m
+[32m+[m[32m        formatter_class=argparse.RawDescriptionHelpFormatter,[m
+     )[m
+ [m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # TARGET[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+     parser.add_argument([m
+         "target",[m
+         help="Target URL or domain to scan",[m
+[36m@@ -18,35 +31,103 @@[m [mdef parse_args():[m
+     parser.add_argument([m
+         "--version",[m
+         action="version",[m
+[31m-        version="ReConngan 0.1.0",[m
+[32m+[m[32m        version="ReConngan 0.1.2",[m
+     )[m
+ [m
+[31m-    parser.add_argument([m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # NETWORK OPTIONS[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    network_group = parser.add_argument_group([m
+[32m+[m[32m        "Network options"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    network_group.add_argument([m
+         "--timeout",[m
+         type=float,[m
+         default=10.0,[m
+[31m-        help=([m
+[31m-            "Request timeout in seconds "[m
+[31m-            "(default: 10)"[m
+[31m-        ),[m
+[32m+[m[32m        metavar="SECONDS",[m
+[32m+[m[32m        help="Request timeout in seconds (default: 10)",[m
+     )[m
+ [m
+[31m-    parser.add_argument([m
+[32m+[m[32m    network_group.add_argument([m
+         "--no-redirect",[m
+         action="store_true",[m
+         help="Do not follow HTTP redirects",[m
+     )[m
+ [m
+[31m-    parser.add_argument([m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # RECONNAISSANCE MODULES[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    recon_group = parser.add_argument_group([m
+[32m+[m[32m        "Reconnaissance modules"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--cookies",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Analyze HTTP cookie security",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--redirects",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Show HTTP redirect chain",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--resources",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Probe known web resources",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--sitemap",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Discover and parse sitemap.xml",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--security-txt",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Discover and parse security.txt",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--candidates",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Show discovered URL candidates",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--content",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Perform active content discovery",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    recon_group.add_argument([m
+[32m+[m[32m        "--all",[m
+[32m+[m[32m        dest="all_modules",[m
+[32m+[m[32m        action="store_true",[m
+[32m+[m[32m        help="Enable all reconnaissance modules",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m[32m    # OUTPUT / POLICY[m
+[32m+[m[32m    # =========================================================[m
+[32m+[m
+[32m+[m[32m    output_group = parser.add_argument_group([m
+[32m+[m[32m        "Output and policy"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    output_group.add_argument([m
+         "--json",[m
+         metavar="FILE",[m
+[31m-        help=([m
+[31m-            "Write scan results "[m
+[31m-            "to a JSON file"[m
+[31m-        ),[m
+[32m+[m[32m        help="Write scan results to a JSON file",[m
+     )[m
+ [m
+[31m-    parser.add_argument([m
+[32m+[m[32m    output_group.add_argument([m
+         "--fail-under",[m
+         type=str.upper,[m
+         choices=[[m
+[36m@@ -58,9 +139,8 @@[m [mdef parse_args():[m
+         ],[m
+         metavar="GRADE",[m
+         help=([m
+[31m-            "Exit with code 1 if "[m
+[31m-            "the scan grade is below "[m
+[31m-            "this grade"[m
+[32m+[m[32m            "Exit with code 1 if the scan grade "[m
+[32m+[m[32m            "is below this grade"[m
+         ),[m
+     )[m
+ [m
+[1mdiff --git a/reconngan/web_resources.py b/reconngan/web_resources.py[m
+[1mindex f183920..ee909a9 100644[m
+[1m--- a/reconngan/web_resources.py[m
+[1m+++ b/reconngan/web_resources.py[m
+[36m@@ -74,12 +74,15 @@[m [mdef fetch_web_resource([m
+ def collect_web_resources([m
+     base_url: str,

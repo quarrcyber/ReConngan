@@ -1,10 +1,25 @@
 import json
 import httpx
+import time
 
 from rich.console import Console
 from rich.markup import escape
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    MofNCompleteColumn,
+    TimeElapsedColumn,
+)
+
+
 #sub files
-from .models import HeaderRule, Finding
+from .models import (
+    HeaderRule,
+    Finding,
+    WebResourceAnalysis,
+)
 from .headers import analyze_headers
 from .scoring import (
     calculate_score,
@@ -46,6 +61,7 @@ from .web_resources import (
 )
 from .content_discovery import (
     discover_content,
+    ContentDiscoveryInterrupted,
 )
 
 
@@ -55,21 +71,23 @@ console = Console()
 
 #-----------------------main---------------------------------
 def main() -> int:
-
+    scan_started = time.perf_counter()
     args = parse_args()
 
     target = args.target
-
     url = normalize_url(target)
+
+    # =========================================================
+    # 1. FETCH MAIN TARGET
+    # =========================================================
+
     try:
         response = fetch_url(
             url,
             timeout=args.timeout,
-            follow_redirects=not args.no_redirect,    
+            follow_redirects=not args.no_redirect,
         )
-# =========================================================
-# 1. FETCH MAIN TARGET
-# =========================================================
+
     except httpx.TimeoutException:
         console.print(
             "[red][!] Request timed out.[/red]"
@@ -83,10 +101,9 @@ def main() -> int:
         )
         return 3
 
-
-# =========================================================
-# 2. TARGET INFORMATION
-# =========================================================
+    # =========================================================
+    # 2. TARGET INFORMATION
+    # =========================================================
 
     print_target_info(
         url,
@@ -94,23 +111,9 @@ def main() -> int:
         str(response.url),
     )
 
-
-# =========================================================
-# 3. REDIRECT RECONNAISSANCE
-# =========================================================
-
-    redirect_chain = collect_redirect_chain(
-        response
-    )
-
-    print_redirect_chain(
-        redirect_chain
-    )
-
-
-# =========================================================
-# 4. HTTP METADATA
-# =========================================================
+    # =========================================================
+    # 3. CORE: HTTP INFORMATION
+    # =========================================================
 
     http_metadata = collect_http_metadata(
         response
@@ -120,31 +123,9 @@ def main() -> int:
         http_metadata
     )
 
-
-# =========================================================
-# 5. COOKIE RECONNAISSANCE
-# =========================================================
-
-    cookies = collect_http_cookies(
-        response
-    )
-
-    print_http_cookies(
-        cookies
-    )
-
-    cookie_findings = analyze_cookie_security(
-        cookies
-    )
-
-    print_cookie_findings(
-        cookie_findings
-    )
-
-
-# =========================================================
-# 6. SECURITY HEADER ANALYSIS
-# =========================================================
+    # =========================================================
+    # 4. CORE: SECURITY HEADERS
+    # =========================================================
 
     findings = analyze_headers(
         response.headers
@@ -164,70 +145,263 @@ def main() -> int:
         grade,
     )
 
+    # =========================================================
+    # OPTIONAL MODULE STATE
+    #
+    # These defaults are important for JSON output.
+    # If a module was not executed, its result stays empty.
+    # =========================================================
 
-# =========================================================
-# 7. KNOWN WEB RESOURCE DISCOVERY
-# =========================================================
+    redirect_chain = []
 
-    web_resources = collect_web_resources(
-        base_url=str(response.url),
-        timeout=args.timeout,
+    cookies = []
+    cookie_findings = []
+
+    web_resources = []
+
+    web_analysis = WebResourceAnalysis(
+        robots=None,
+        sitemap=None,
+        security_txt=None,
+        candidates=[],
     )
 
-    print_web_resources(
-        web_resources
+    security_txt_info = None
+
+    content_results = []
+    scan_interrupted = False
+
+
+    # =========================================================
+    # 5. OPTIONAL: REDIRECT RECONNAISSANCE
+    # =========================================================
+
+    needs_redirect_data = (
+        args.redirects
+        or args.candidates
+        or args.content is not None
+        or args.all_modules
     )
 
+    if needs_redirect_data:
+        redirect_chain = collect_redirect_chain(
+            response
+        )
 
-# =========================================================
-# 8. ANALYZE DISCOVERED WEB RESOURCES
-# =========================================================
+    if args.redirects or args.all_modules:
+        print_redirect_chain(
+            redirect_chain
+        )
 
-    web_analysis = analyze_web_resources(
-        base_url=str(response.url),
-        resources=web_resources,
-        redirect_chain=redirect_chain,
-    )
+    # =========================================================
+    # 6. OPTIONAL: COOKIE SECURITY
+    # =========================================================
+
+    if args.cookies or args.all_modules:
+
+        cookies = collect_http_cookies(
+            response
+        )
+
+        print_http_cookies(
+            cookies
+        )
+
+        cookie_findings = analyze_cookie_security(
+            cookies
+        )
+
+        print_cookie_findings(
+            cookie_findings
+        )
+
+    # =========================================================
+    # 7. PLAN WEB RESOURCE REQUESTS
+    # =========================================================
+
+    resource_names: set[str] = set()
+
+    # --resources, --candidates and --content require the
+    # complete known-resource discovery set.
+    if (
+        args.resources
+        or args.candidates
+        or args.content
+        or args.all_modules
+    ):
+        resource_names.update(
+            {
+                "robots.txt",
+                "sitemap.xml",
+                "security.txt",
+            }
+        )
+
+    else:
+        # Individual resource flags should only request
+        # the resource explicitly requested by the user.
+
+        if args.sitemap:
+            resource_names.add(
+                "sitemap.xml"
+            )
+
+        if args.security_txt:
+            resource_names.add(
+                "security.txt"
+            )
+
+    # =========================================================
+    # 8. OPTIONAL: WEB RESOURCE DISCOVERY
+    # =========================================================
+
+    if resource_names:
+
+        web_resources = collect_web_resources(
+            base_url=str(response.url),
+            timeout=args.timeout,
+            names=resource_names,
+        )
+
+        web_analysis = analyze_web_resources(
+            base_url=str(response.url),
+            resources=web_resources,
+            redirect_chain=redirect_chain,
+        )
+
+        security_txt_info = (
+            web_analysis.security_txt
+        )
+
+    # =========================================================
+    # 9. OPTIONAL OUTPUT: KNOWN WEB RESOURCES
+    # =========================================================
+
+    if args.resources or args.all_modules:
+        print_web_resources(
+            web_resources
+        )
+
+    # =========================================================
+    # 10. OPTIONAL OUTPUT: SITEMAP
+    # =========================================================
+
+    if args.sitemap or args.all_modules:
+        print_sitemap_info(
+            web_analysis.sitemap
+        )
+
+    # =========================================================
+    # 11. OPTIONAL OUTPUT: SECURITY.TXT
+    # =========================================================
+
+    if args.security_txt or args.all_modules:
+        print_security_txt_info(
+            web_analysis.security_txt
+        )
+
+    # =========================================================
+    # 12. OPTIONAL OUTPUT: URL CANDIDATES
+    # =========================================================
+
+    if args.candidates or args.all_modules:
+        print_url_candidates(
+            web_analysis.candidates
+        )
+
+    # =========================================================
+    # 13. OPTIONAL: ACTIVE CONTENT DISCOVERY
+    # =========================================================
+
+    if args.content is not None or args.all_modules:
+
+        content_started = time.perf_counter()
+        content_limit = (
+            args.content
+            if args.content is not None
+            else 50
+        )
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn(
+                    "[cyan]{task.description}[/cyan]"
+                ),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+
+                task_id = progress.add_task(
+                    "Content discovery",
+                    total=None,
+                )
+
+                def update_content_progress(
+                    completed: int,
+                    total: int,
+                    current: str,
+                ) -> None:
+                    progress.update(
+                        task_id,
+                        completed=completed,
+                        total=total,
+                    )
+                content_results = discover_content(
+                    base_url=str(response.url),
+                    candidates=web_analysis.candidates,
+                    timeout=args.timeout,
+                    max_candidates=content_limit,
+                    progress_callback=(
+                        update_content_progress
+                    ),
+                )
+
+        except ContentDiscoveryInterrupted as exc:
+            content_results = exc.results
+            scan_interrupted = True
+
+        content_elapsed = (
+            time.perf_counter()
+            - content_started
+        )
+
+        if content_results:
+            print_content_results(
+                content_results
+            )
+
+        if scan_interrupted:
+            console.print(
+                "\n[yellow][!] Content discovery "
+                "cancelled by user.[/yellow]"
+            )
+
+            console.print(
+                "[yellow]"
+                f"[+] Preserved "
+                f"{len(content_results)} completed probes"
+                f" after {content_elapsed:.2f}s."
+                "[/yellow]"
+            )
+
+        else:
+            console.print(
+                "\n[green][+] Content discovery "
+                "completed.[/green] "
+                f"[dim]"
+                f"{len(content_results)} probes "
+                f"in {content_elapsed:.2f}s"
+                f"[/dim]"
+            )
 
 
-# =========================================================
-# 9. PARSED RESOURCE INFORMATION
-# =========================================================
+    # =========================================================
+    # 14. JSON REPORT
+    # =========================================================
 
-    print_sitemap_info(
-        web_analysis.sitemap
-    )
-
-    print_security_txt_info(
-        web_analysis.security_txt
-    )
-
-
-# =========================================================
-# 10. DISCOVERED URL CANDIDATES
-# =========================================================
-
-    print_url_candidates(
-        web_analysis.candidates
-    )
-
-
-# =========================================================
-# 11. VERIFY DISCOVERED CONTENT
-# =========================================================
-
-    content_results = discover_content(
-        base_url=str(response.url),
-        candidates=web_analysis.candidates,
-        timeout=args.timeout,
-    )
-
-    print_content_results(
-        content_results
-    )
-# =========================================================
-# JSON REPORT
-# =========================================================
     if args.json:
 
         report_data = build_report_data(
@@ -240,7 +414,7 @@ def main() -> int:
             cookies=cookies,
             cookie_findings=cookie_findings,
             web_resources=web_resources,
-            web_analysis=web_analysis,            
+            web_analysis=web_analysis,
             content_results=content_results,
             findings=findings,
             score=score,
@@ -256,96 +430,48 @@ def main() -> int:
             f"\n[green][+] JSON report saved to "
             f"{escape(args.json)}[/green]"
         )
-    if args.fail_under:
 
-        if not grade_meets_threshold(
-            grade,
-            args.fail_under,
-        ):
+    # =========================================================
+    # 15. FAIL-UNDER POLICY
+    # =========================================================
 
-            console.print(
-                f"\n[red][!] Grade {grade} "
-                f"is below required grade "
-                f"{args.fail_under}.[/red]"
+        if scan_interrupted:
+            scan_elapsed = (
+                time.perf_counter()
+                - scan_started
             )
 
-            return 1
-    return 0
+            console.print(
+                f"\n[yellow][!] Scan stopped by user "
+                f"after {scan_elapsed:.2f}s.[/yellow]"
+            )
 
+            return 130
+
+
+        if args.fail_under:
+
+            if not grade_meets_threshold(
+                grade,
+                args.fail_under,
+            ):
+                console.print(
+                    f"\n[red][!] Grade {grade} "
+                    f"is below required grade "
+                    f"{args.fail_under}.[/red]"
+                )
+
+            return 1
+    scan_elapsed = (
+        time.perf_counter()
+        - scan_started
+    )
+
+    console.print(
+        f"\n[green][+] Scan completed[/green] "
+        f"[dim]in {scan_elapsed:.2f}s[/dim]"
+    )
+
+    return 0
 #===========================================
 #test offline part
-def test_content_discovery_offline():
-
-    print(
-        "\n[OFFLINE TEST] Content discovery"
-    )
-    print("-" * 55)
-
-    from .content_discovery import (
-        classify_status,
-        response_similarity,
-        looks_like_soft404,
-    )
-
-    baseline = (
-        "<html>"
-        "<h1>Page not found</h1>"
-        "</html>"
-    )
-
-    candidate = (
-        "<html>"
-        "<h1>Page not found</h1>"
-        "</html>"
-    )
-
-    checks = [
-        (
-            "200 FOUND",
-            classify_status(200)
-            == "FOUND",
-        ),
-
-        (
-            "302 REDIRECT",
-            classify_status(302)
-            == "REDIRECT",
-        ),
-
-        (
-            "403 PROTECTED",
-            classify_status(403)
-            == "PROTECTED",
-        ),
-
-        (
-            "404 NOT_FOUND",
-            classify_status(404)
-            == "NOT_FOUND",
-        ),
-
-        (
-            "similarity exact",
-            response_similarity(
-                baseline,
-                candidate,
-            ) == 1.0,
-        ),
-
-        (
-            "soft404 detected",
-            looks_like_soft404(
-                status_code=200,
-                body=candidate,
-                baseline_status=200,
-                baseline_body=baseline,
-            ),
-        ),
-    ]
-
-    for name, passed in checks:
-
-        print(
-            f"{name:<28}"
-            f"{'[PASS]' if passed else '[FAIL]'}"
-        )

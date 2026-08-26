@@ -1,6 +1,7 @@
 import re
 import secrets
 
+from collections.abc import Callable
 from difflib import SequenceMatcher
 from urllib.parse import urljoin
 
@@ -11,18 +12,55 @@ from .models import (
     ContentProbe,
 )
 
+# ============================================================
+# CONTENT DISCOVERY LIMITS
+# ============================================================
+
+# Do not feed huge HTML documents directly into difflib.
+# Large dynamic pages can make SequenceMatcher extremely slow.
+MAX_NORMALIZED_CHARS = 50_000
+
+# Similarity is calculated on words instead of raw characters.
+# This keeps the comparison bounded and predictable.
+MAX_SIMILARITY_TOKENS = 4_000
+
+
+ProgressCallback = Callable[
+    [int, int, str],
+    None,
+]
+
+
+class ContentDiscoveryInterrupted(KeyboardInterrupt):
+    """
+    Raised when the user interrupts content discovery.
+
+    Completed probe results are preserved so the caller can
+    still display or export partial results.
+    """
+
+    def __init__(
+        self,
+        results: list[ContentProbe],
+    ) -> None:
+        super().__init__(
+            "Content discovery interrupted by user"
+        )
+
+        self.results = list(results)
 
 def normalize_body(
     body: str,
     token: str | None = None,
 ) -> str:
-
-    text = body[:200_000]
+    text = body[
+        :MAX_NORMALIZED_CHARS
+    ]
 
     if token:
         text = text.replace(
             token,
-            "<RANDOM>"
+            "<RANDOM>",
         )
 
     text = re.sub(
@@ -37,16 +75,62 @@ def response_similarity(
     first: str,
     second: str,
 ) -> float:
-
     if not first or not second:
         return 0.0
 
-    return SequenceMatcher(
+    if first == second:
+        return 1.0
+
+    # Compare words instead of individual characters.
+    first_tokens = first.split()[
+        :MAX_SIMILARITY_TOKENS
+    ]
+
+    second_tokens = second.split()[
+        :MAX_SIMILARITY_TOKENS
+    ]
+
+    if not first_tokens or not second_tokens:
+        return 0.0
+
+    # If page sizes differ substantially, they are very
+    # unlikely to represent the same soft-404 template.
+    shorter = min(
+        len(first_tokens),
+        len(second_tokens),
+    )
+
+    longer = max(
+        len(first_tokens),
+        len(second_tokens),
+    )
+
+    length_ratio = (
+        shorter / longer
+    )
+
+    if length_ratio < 0.60:
+        return 0.0
+
+    matcher = SequenceMatcher(
         None,
-        first,
-        second,
-        autojunk=False,
-    ).ratio()
+        first_tokens,
+        second_tokens,
+        autojunk=True,
+    )
+
+    # quick_ratio() is an inexpensive upper bound.
+    # If it is already low, avoid the more expensive
+    # full matching algorithm.
+    quick_similarity = (
+        matcher.quick_ratio()
+    )
+
+    if quick_similarity < 0.90:
+        return quick_similarity
+
+    return matcher.ratio()
+
 
 def classify_status(
     status_code: int,
@@ -182,13 +266,15 @@ def probe_candidate(
         soft_404=soft_404,
         error=None,
     )
+
+
 def discover_content(
     base_url: str,
     candidates: list[URLCandidate],
     timeout: float = 10.0,
     max_candidates: int = 30,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[ContentProbe]:
-
     same_host_candidates = [
         candidate
         for candidate in candidates
@@ -201,39 +287,80 @@ def discover_content(
         ]
     )
 
+    total_candidates = len(
+        same_host_candidates
+    )
+
     if not same_host_candidates:
         return []
 
     results: list[ContentProbe] = []
 
-    with httpx.Client(
-        timeout=timeout,
-        follow_redirects=False,
-    ) as client:
+    try:
+        with httpx.Client(
+            timeout=timeout,
+            follow_redirects=False,
+        ) as client:
 
-        try:
-            (
-                baseline_status,
-                baseline_body,
-            ) = build_soft404_baseline(
-                client,
-                base_url,
-            )
+            # ---------------------------------------------
+            # Build soft-404 baseline
+            # ---------------------------------------------
 
-        except httpx.RequestError:
-            return []
+            if progress_callback:
+                progress_callback(
+                    0,
+                    total_candidates,
+                    "Building soft-404 baseline",
+                )
 
-        for candidate in same_host_candidates:
+            try:
+                (
+                    baseline_status,
+                    baseline_body,
+                ) = build_soft404_baseline(
+                    client,
+                    base_url,
+                )
 
-            result = probe_candidate(
-                client=client,
-                candidate=candidate,
-                baseline_status=baseline_status,
-                baseline_body=baseline_body,
-            )
+            except httpx.RequestError:
+                return []
 
-            results.append(
-                result
-            )
+            # ---------------------------------------------
+            # Probe discovered candidates
+            # ---------------------------------------------
+
+            for index, candidate in enumerate(
+                same_host_candidates,
+                start=1,
+            ):
+                if progress_callback:
+                    progress_callback(
+                        index - 1,
+                        total_candidates,
+                        candidate.url,
+                    )
+
+                result = probe_candidate(
+                    client=client,
+                    candidate=candidate,
+                    baseline_status=baseline_status,
+                    baseline_body=baseline_body,
+                )
+
+                results.append(
+                    result
+                )
+
+                if progress_callback:
+                    progress_callback(
+                        index,
+                        total_candidates,
+                        candidate.url,
+                    )
+
+    except KeyboardInterrupt as exc:
+        raise ContentDiscoveryInterrupted(
+            results
+        ) from exc
 
     return results

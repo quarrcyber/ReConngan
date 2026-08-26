@@ -74,11 +74,14 @@ def fetch_web_resource(
 def collect_web_resources(
     base_url: str,
     timeout: float = 10.0,
+    names: set[str] | None = None,
 ) -> list[WebResource]:
-
     resources: list[WebResource] = []
 
     for name, path in KNOWN_RESOURCES.items():
+
+        if names is not None and name not in names:
+            continue
 
         resource = fetch_web_resource(
             base_url=base_url,
@@ -92,6 +95,7 @@ def collect_web_resources(
         )
 
     return resources
+
 #robots.txt parse
 def parse_robots_txt(
     body: str,
