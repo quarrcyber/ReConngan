@@ -7,7 +7,20 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.markup import escape
 
-from .models import Finding, HttpMetadata
+from .models import (
+    Finding,
+    HttpMetadata,
+    CookieInfo,
+    RedirectHop,
+    CookieFinding,
+    WebResource,
+    SitemapInfo,
+    SecurityTxtInfo,
+    URLCandidate,
+    WebResourceAnalysis,
+)
+from .models import ContentProbe
+
 
 console = Console()
 
@@ -21,7 +34,8 @@ def status_style(status: str) -> str:
 
     if status == "MISSING":
         return "red"
-
+    if status == "INVALID":
+        return "red"
     return "white"
 
 def severity_style(severity: str) -> str:
@@ -257,12 +271,20 @@ def print_report(
                 f"[bold]Evidence:[/bold] "
                 f"{evidence_preview}"
             )
+#------------buid_report_data()-----------------------------
 def build_report_data(
     target: str,
     final_url: str,
     status_code: int,
     metadata: HttpMetadata,
+    redirect_chain: list[RedirectHop],
     findings: list[Finding],
+    cookies: list[CookieInfo],
+    cookie_findings: list[CookieFinding],
+    web_resources: list[WebResource], 
+    web_analysis: WebResourceAnalysis,    
+    security_txt: SecurityTxtInfo | None,    
+    content_results: list[ContentProbe],    
     score: float,
     grade: str,
 ) -> dict:
@@ -278,6 +300,61 @@ def build_report_data(
             asdict(finding)
             for finding in findings
         ],
+        "cookies": [
+            asdict(cookie)
+            for cookie in cookies
+        ],
+
+        "cookie_findings": [
+            asdict(finding)
+            for finding in cookie_findings
+        ],
+        "web_resources": [
+           {
+               "name": resource.name,
+               "url": resource.url,
+               "status_code": resource.status_code,
+               "content_type": resource.content_type,
+               "found": resource.found,
+               "error": resource.error,
+           }
+           for resource in web_resources
+        ],
+        "web_discovery": {
+            "robots": (
+                asdict(web_analysis.robots)
+                if web_analysis.robots
+                else None
+            ),
+
+            "sitemap": (
+                asdict(web_analysis.sitemap)
+                if web_analysis.sitemap
+                else None
+            ),
+
+            "security_txt": (
+                asdict(web_analysis.security_txt)
+                if web_analysis.security_txt
+                else None
+            ),
+
+            "candidates": [
+                asdict(candidate)
+                for candidate
+                in web_analysis.candidates
+            ],
+        },
+        "content_discovery": [
+            asdict(result)
+            for result in content_results
+        ],
+
+
+
+
+
+
     }
 
 def write_json_report(
@@ -336,5 +413,463 @@ def print_http_metadata(
         "Content-Length",
         metadata.content_length,
     )
+
+    console.print(table)
+
+def print_http_cookies(
+    cookies: list[CookieInfo]
+) -> None:
+
+    if not cookies:
+        return
+
+    table = Table(
+        title="HTTP Cookies",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column("Cookie")
+    table.add_column("Secure")
+    table.add_column("HttpOnly")
+    table.add_column("SameSite")
+    table.add_column("Path")
+
+    for cookie in cookies:
+
+        secure = (
+            "[green]YES[/green]"
+            if cookie.secure
+            else "[yellow]NO[/yellow]"
+        )
+
+        httponly = (
+            "[green]YES[/green]"
+            if cookie.httponly
+            else "[yellow]NO[/yellow]"
+        )
+
+        table.add_row(
+            cookie.name,
+            secure,
+            httponly,
+            cookie.samesite or "Not set",
+            cookie.path or "Not set",
+        )
+
+    console.print(table)
+def print_redirect_chain(
+    chain: list[RedirectHop]
+) -> None:
+
+    if len(chain) <= 1:
+        return
+
+    table = Table(
+        title="Redirect Chain",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Step",
+        justify="right",
+    )
+
+    table.add_column(
+        "Status",
+    )
+
+    table.add_column(
+        "URL",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Location",
+        overflow="fold",
+    )
+
+    for index, hop in enumerate(
+        chain,
+        start=1,
+    ):
+
+        status_color = http_status_style(
+            hop.status_code
+        )
+
+        table.add_row(
+            str(index),
+
+            (
+                f"[{status_color}]"
+                f"{hop.status_code}"
+                f"[/{status_color}]"
+            ),
+
+            escape(hop.url),
+
+            (
+                escape(hop.location)
+                if hop.location
+                else "-"
+            ),
+        )
+
+    console.print(table)
+
+def print_cookie_findings(
+    findings: list[CookieFinding]
+) -> None:
+
+    if not findings:
+        return
+
+    table = Table(
+        title="Cookie Security Findings",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Cookie",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Check",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Severity",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Note",
+        overflow="fold",
+    )
+
+    for finding in findings:
+
+        status_color = status_style(
+            finding.status
+        )
+
+        severity_color = severity_style(
+            finding.severity
+        )
+
+        table.add_row(
+            finding.cookie,
+            finding.check,
+
+            (
+                f"[{status_color}]"
+                f"{finding.status}"
+                f"[/{status_color}]"
+            ),
+
+            (
+                f"[{severity_color}]"
+                f"{finding.severity}"
+                f"[/{severity_color}]"
+            ),
+
+            finding.note,
+        )
+
+    console.print(table)
+#------------------web resource----------------
+def print_web_resources(
+    resources: list[WebResource]
+) -> None:
+
+    table = Table(
+        title="Known Web Resources",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Resource"
+    )
+
+    table.add_column(
+        "Status"
+    )
+
+    table.add_column(
+        "Found"
+    )
+
+    table.add_column(
+        "URL",
+        overflow="fold",
+    )
+
+    for resource in resources:
+
+        status = (
+            str(resource.status_code)
+            if resource.status_code is not None
+            else "ERROR"
+        )
+
+        found_text = (
+            "[green]YES[/green]"
+            if resource.found
+            else "[yellow]NO[/yellow]"
+        )
+
+        table.add_row(
+            resource.name,
+            status,
+            found_text,
+            escape(resource.url),
+        )
+
+    console.print(table)
+#----------------------sitemap--------------------
+def print_sitemap_info(
+    sitemap: SitemapInfo | None
+) -> None:
+
+    if sitemap is None:
+        return
+
+    if sitemap.error:
+
+        console.print(
+            "[yellow]"
+            "Sitemap parsing failed: "
+            f"{escape(sitemap.error)}"
+            "[/yellow]"
+        )
+
+        return
+
+    if not sitemap.urls and not sitemap.sitemaps:
+        return
+
+    table = Table(
+        title="Sitemap Discovery",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column("Type")
+    table.add_column(
+        "URL",
+        overflow="fold",
+    )
+
+    for url in sitemap.urls:
+
+        table.add_row(
+            "URL",
+            escape(url),
+        )
+
+    for url in sitemap.sitemaps:
+
+        table.add_row(
+            "Sitemap",
+            escape(url),
+        )
+
+    console.print(table)
+#security.xml
+def print_security_txt_info(
+    info: SecurityTxtInfo | None
+) -> None:
+
+    if info is None:
+        return
+
+    table = Table(
+        title="security.txt",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Field",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Value",
+        overflow="fold",
+    )
+
+    for contact in info.contacts:
+        table.add_row(
+            "Contact",
+            escape(contact),
+        )
+
+    for canonical in info.canonical:
+        table.add_row(
+            "Canonical",
+            escape(canonical),
+        )
+
+    for policy in info.policy:
+        table.add_row(
+            "Policy",
+            escape(policy),
+        )
+
+    for acknowledgment in info.acknowledgments:
+        table.add_row(
+            "Acknowledgments",
+            escape(acknowledgment),
+        )
+
+    if info.expires:
+
+        table.add_row(
+            "Expires",
+            escape(info.expires),
+        )
+
+    if info.preferred_languages:
+
+        table.add_row(
+            "Languages",
+            ", ".join(
+                info.preferred_languages
+            ),
+        )
+
+    console.print(table)
+#URL candidate
+def print_url_candidates(
+    candidates: list[URLCandidate],
+    limit: int = 30,
+) -> None:
+
+    if not candidates:
+        return
+
+    table = Table(
+        title="Discovered URL Candidates",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Source",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Scope",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "URL",
+        overflow="fold",
+    )
+
+    for candidate in candidates[:limit]:
+
+        scope = (
+            "[green]SAME-HOST[/green]"
+            if candidate.same_host
+            else "[yellow]EXTERNAL[/yellow]"
+        )
+
+        table.add_row(
+            candidate.source,
+            scope,
+            escape(candidate.url),
+        )
+
+    console.print(table)
+
+    remaining = (
+        len(candidates)
+        - limit
+    )
+
+    if remaining > 0:
+
+        console.print(
+            f"[dim]"
+            f"... {remaining} more candidates "
+            f"not displayed"
+            f"[/dim]"
+        )
+def print_content_results(
+    results: list[ContentProbe]
+) -> None:
+
+    if not results:
+        return
+
+    table = Table(
+        title="Content Discovery",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Class",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Source",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Length",
+        justify="right",
+    )
+
+    table.add_column(
+        "URL",
+        overflow="fold",
+    )
+
+    for result in results:
+
+        status = (
+            str(result.status_code)
+            if result.status_code
+            is not None
+            else "-"
+        )
+
+        length = (
+            str(result.content_length)
+            if result.content_length
+            is not None
+            else "-"
+        )
+
+        table.add_row(
+            status,
+            result.classification,
+            result.source,
+            length,
+            escape(result.url),
+        )
 
     console.print(table)

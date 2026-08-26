@@ -27,3 +27,87 @@ class HttpMetadata:
     response_time_ms: float
     content_type: str
     content_length: str
+
+@dataclass
+class CookieInfo:
+    name: str
+    secure: bool
+    httponly: bool
+    samesite: str | None
+    path: str | None
+    domain: str | None
+
+@dataclass
+class CookieFinding:
+    cookie: str
+    check: str
+    status: str
+    severity: str
+    note: str
+    evidence: str
+
+@dataclass
+class RedirectHop:
+    url: str
+    status_code: int
+    location: str | None
+
+#-------------------------Web Resources--------------------------
+@dataclass
+class WebResource:
+    name: str
+    url: str
+    status_code: int | None
+    content_type: str | None
+    found: bool
+    body: str | None
+    error: str | None
+
+@dataclass
+class RobotsInfo:
+    disallow: list[str]
+    allow: list[str]
+    sitemaps: list[str]
+
+@dataclass
+class SitemapInfo:
+    urls: list[str]
+    sitemaps: list[str]
+    error: str | None
+
+@dataclass
+class SecurityTxtInfo:
+    contacts: list[str]
+    canonical: list[str]
+    policy: list[str]
+    acknowledgments: list[str]
+    expires: str | None
+    preferred_languages: list[str]
+
+@dataclass
+class URLCandidate:
+    url: str
+    source: str
+    same_host: bool
+
+
+@dataclass
+class WebResourceAnalysis:
+    robots: RobotsInfo | None
+    sitemap: SitemapInfo | None
+    security_txt: SecurityTxtInfo | None
+    candidates: list[URLCandidate]
+#Content Discovery
+@dataclass
+class ContentProbe:
+    url: str
+    source: str
+    status_code: int | None
+    classification: str
+
+    content_type: str | None
+    content_length: int | None
+    redirect_to: str | None
+
+    soft_404: bool
+    error: str | None

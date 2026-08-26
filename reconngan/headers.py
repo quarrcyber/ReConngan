@@ -1,40 +1,122 @@
 from .models import HeaderRule, Finding
 
+#--------------------parse hsts----------------------
+def parse_hsts(
+    value: str,
+) -> dict[str, str | bool]:
+
+    directives: dict[str, str | bool] = {}
+
+    for raw_part in value.split(";"):
+
+        part = raw_part.strip()
+
+        if not part:
+            continue
+
+        if "=" in part:
+
+            name, raw_value = part.split(
+                "=",
+                1,
+            )
+
+            directives[
+                name.strip().lower()
+            ] = raw_value.strip()
+
+        else:
+
+            directives[
+                part.lower()
+            ] = True
+
+    return directives
 #--------------------config validator hsts--------------------------------
-def validate_hsts(value: str | None) -> tuple[str, str]:
+def validate_hsts(
+    value: str | None
+) -> tuple[str, str]:
 
     if value is None:
-        return "MISSING", "Header is not set"
-
-    directives = [
-        part.strip()
-        for part in value.split(";")
-    ]
-
-    max_age = None
-
-    for directive in directives:
-        if directive.lower().startswith("max-age="):
-            max_age = directive
-            break
-
-    if max_age is None:
-        return "WEAK", "max-age directive is missing"
-
-    try:
-        seconds = int(
-            max_age.split("=", 1)[1].strip()
+        return (
+            "MISSING",
+            "Header is not set"
         )
 
+    policy = value.strip()
+
+    if not policy:
+        return (
+            "WEAK",
+            "Header is empty"
+        )
+
+    directives = parse_hsts(policy)
+
+    max_age_raw = directives.get(
+        "max-age"
+    )
+
+    if max_age_raw is None:
+        return (
+            "WEAK",
+            "max-age directive is missing"
+        )
+
+    if not isinstance(
+        max_age_raw,
+        str,
+    ):
+        return (
+            "WEAK",
+            "max-age value is invalid"
+        )
+
+    try:
+        seconds = int(max_age_raw)
+
     except ValueError:
-        return "WEAK", "max-age value is invalid"
+
+        return (
+            "WEAK",
+            "max-age value is not an integer"
+        )
 
     if seconds <= 0:
-        return "WEAK", "max-age=0 disables HSTS"
 
-    return "OK", f"HSTS enabled with max-age={seconds}"
+        return (
+            "WEAK",
+            "max-age=0 disables HSTS"
+        )
 
-#---------------------------validate-x-content-type-options------------------
+    protections = [
+        f"max-age={seconds}"
+    ]
+
+    if (
+        directives.get(
+            "includesubdomains"
+        )
+        is True
+    ):
+        protections.append(
+            "includeSubDomains"
+        )
+
+    if (
+        directives.get("preload")
+        is True
+    ):
+        protections.append(
+            "preload"
+        )
+
+    return (
+        "OK",
+        "HSTS enabled: "
+        + ", ".join(protections)
+    )
+#---------------------------validate-x-content-type-options(xcto)------------------
 def validate_x_content_type_options(
     value: str | None
 ) -> tuple[str, str]:
@@ -46,8 +128,8 @@ def validate_x_content_type_options(
         return "OK", "MIME sniffing protection enabled"
 
     return (
-        "WEAK",
-        f"Unexpected value: {value}"
+        "INVALID",
+        f"Expected nosniff, got: {value}"
     )
 #----------------------x-frame-options------------------------
 def validate_x_frame_options(
@@ -66,8 +148,10 @@ def validate_x_frame_options(
         return "OK", "Framing allowed only from same origin"
 
     if normalized.startswith("ALLOW-FROM"):
-        return "WEAK", "ALLOW-FROM is obsolete and not widely supported"
-
+        return (
+        "INVALID",
+        f"Unrecognized value: {value}"
+        )
     return "WEAK", f"Unexpected value: {value}"
 #------------------referrer policy-----------------------
 def validate_referrer_policy(
@@ -125,6 +209,26 @@ def validate_permissions_policy(
         return "WEAK", "Header does not contain any policy directives"
 
     return "OK", "Permissions-Policy is present"
+#----------------------parse csp---------------------------
+def parse_csp(
+    value: str,
+) -> dict[str, list[str]]:
+
+    directives: dict[str, list[str]] = {}
+
+    for raw_directive in value.split(";"):
+
+        parts = raw_directive.strip().split()
+
+        if not parts:
+            continue
+
+        name = parts[0].lower()
+        values = parts[1:]
+
+        directives[name] = values
+
+    return directives
 #----------------------validator CSP---------------------------
 def validate_csp(
     value: str | None
@@ -138,28 +242,60 @@ def validate_csp(
     if not policy:
         return "WEAK", "Header is empty"
 
-    normalized = policy.lower()
+    directives = parse_csp(policy)
+
+    if not directives:
+        return "WEAK", "No valid CSP directives found"
 
     problems = []
 
-    if "'unsafe-inline'" in normalized:
-        problems.append("unsafe-inline")
+    script_policy = directives.get(
+        "script-src"
+    )
 
-    if "'unsafe-eval'" in normalized:
-        problems.append("unsafe-eval")
+    if script_policy is None:
+        script_policy = directives.get(
+            "default-src"
+        )
 
-    if "script-src *" in normalized:
-        problems.append("wildcard script-src")
+    if script_policy is None:
+        problems.append(
+            "script-src and default-src are missing"
+        )
+
+    else:
+
+        normalized_sources = {
+            source.lower()
+            for source in script_policy
+        }
+
+        if "'unsafe-eval'" in normalized_sources:
+            problems.append(
+                "unsafe-eval in script policy"
+            )
+
+        if "'unsafe-inline'" in normalized_sources:
+            problems.append(
+                "unsafe-inline in script policy"
+            )
+
+        if "*" in normalized_sources:
+            problems.append(
+                "wildcard source in script policy"
+            )
 
     if problems:
         return (
             "WEAK",
-            "Potentially weak directives: "
+            "Potentially weak CSP: "
             + ", ".join(problems)
         )
 
-    return "OK", "CSP is present with no basic weak patterns detected"
-  
+    return (
+        "OK",
+        "CSP contains a restrictive script policy"
+    )  
 #---------------RULES--------------------
 SECURITY_RULES = [
     HeaderRule(
