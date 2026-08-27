@@ -1,5 +1,5 @@
 import argparse
-
+from urllib.parse import urlsplit
 def positive_int(value: str) -> int:
     try:
         number = int(value)
@@ -28,6 +28,7 @@ def parse_args():
             "  reconngan example.com\n"
             "  reconngan example.com --cookies\n"
             "  reconngan example.com --sitemap\n"
+            "  reconngan example.com --tls\n"
             "  reconngan example.com --content\n"
             "  reconngan example.com --all"
         ),
@@ -42,7 +43,11 @@ def parse_args():
         "target",
         help="Target URL or domain to scan",
     )
-
+    parser.add_argument(
+        "--tls",
+        action="store_true",
+        help="Inspect TLS protocol and X.509 certificate",
+    )
     parser.add_argument(
         "--version",
         action="version",
@@ -89,6 +94,12 @@ def parse_args():
         "--redirects",
         action="store_true",
         help="Show HTTP redirect chain",
+    )
+
+    recon_group.add_argument(
+        "--tls",
+        action="store_true",
+        help="Inspect TLS protocol and X.509 certificate",
     )
 
     recon_group.add_argument(
@@ -168,3 +179,33 @@ def parse_args():
     )
 
     return parser.parse_args()
+
+def get_tls_endpoint(
+    target: str,
+) -> tuple[str, int]:
+    value = target.strip()
+
+    if "://" not in value:
+        value = f"https://{value}"
+
+    parsed = urlsplit(value)
+
+    if not parsed.hostname:
+        raise ValueError(
+            f"Invalid TLS target: {target}"
+        )
+
+    host = parsed.hostname
+
+    try:
+        port = (
+            parsed.port
+            if parsed.port is not None
+            else 443
+        )
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid port in target: {target}"
+        ) from exc
+
+    return host, port

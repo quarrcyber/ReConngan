@@ -111,3 +111,29 @@ class ContentProbe:
 
     soft_404: bool
     error: str | None
+# ---------------- TLS Intelligence ----------------
+
+@dataclass
+class TLSResult:
+    host: str
+    port: int
+
+    version: str | None
+    cipher: str | None
+    cipher_bits: int | None
+    alpn: str | None
+
+    subject: str
+    issuer: str
+    serial_number: str
+    sha256_fingerprint: str
+
+    valid_from: str
+    valid_until: str
+    days_remaining: int
+
+    dns_names: list[str]
+    ip_addresses: list[str]
+
+    hostname_match: bool
+    warnings: list[str]

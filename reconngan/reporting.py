@@ -18,6 +18,7 @@ from .models import (
     SecurityTxtInfo,
     URLCandidate,
     WebResourceAnalysis,
+    TLSResult,
 )
 from .models import ContentProbe
 
@@ -285,6 +286,7 @@ def build_report_data(
     web_analysis: WebResourceAnalysis,    
     security_txt: SecurityTxtInfo | None,    
     content_results: list[ContentProbe],    
+    tls_result: TLSResult | None,
     score: float,
     grade: str,
 ) -> dict:
@@ -294,6 +296,11 @@ def build_report_data(
         "final_url": final_url,
         "status_code": status_code,
         "http": asdict(metadata),
+        "tls": (
+            asdict(tls_result)
+            if tls_result is not None
+            else None
+        ),
         "score": score,
         "grade": grade,
         "findings": [
@@ -415,6 +422,132 @@ def print_http_metadata(
     )
 
     console.print(table)
+def print_tls_info(
+    result: TLSResult,
+    san_limit: int = 20,
+) -> None:
+    table = Table(
+        title="TLS Intelligence",
+        show_header=False,
+    )
+
+    table.add_column(
+        "Field",
+        style="bold",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Value",
+    )
+
+    table.add_row(
+        "Endpoint",
+        f"{result.host}:{result.port}",
+    )
+
+    table.add_row(
+        "TLS Version",
+        result.version or "-",
+    )
+
+    table.add_row(
+        "Cipher",
+        result.cipher or "-",
+    )
+
+    table.add_row(
+        "Cipher Bits",
+        (
+            str(result.cipher_bits)
+            if result.cipher_bits is not None
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "ALPN",
+        result.alpn or "-",
+    )
+
+    table.add_row(
+        "Subject",
+        escape(result.subject),
+    )
+
+    table.add_row(
+        "Issuer",
+        escape(result.issuer),
+    )
+
+    table.add_row(
+        "Valid From",
+        result.valid_from,
+    )
+
+    table.add_row(
+        "Valid Until",
+        result.valid_until,
+    )
+
+    table.add_row(
+        "Days Remaining",
+        str(result.days_remaining),
+    )
+
+    table.add_row(
+        "Hostname Match",
+        (
+            "[green]YES[/green]"
+            if result.hostname_match
+            else "[red]NO[/red]"
+        ),
+    )
+
+    table.add_row(
+        "DNS SANs",
+        str(len(result.dns_names)),
+    )
+
+    table.add_row(
+        "IP SANs",
+        str(len(result.ip_addresses)),
+    )
+
+    console.print(table)
+    if result.dns_names:
+        console.print(
+            "\n[bold]Subject Alternative Names[/bold]"
+        )
+
+        for name in result.dns_names[:san_limit]:
+            console.print(
+                f"  {escape(name)}"
+            )
+
+        remaining = (
+            len(result.dns_names)
+            - san_limit
+        )
+
+        if remaining > 0:
+            console.print(
+                f"[dim]  ... {remaining} more[/dim]"
+            )
+            console.print(
+                "\n[bold]SHA-256 Fingerprint[/bold]"
+            )
+
+            console.print(
+                f"  {result.sha256_fingerprint}"
+            )
+            console.print(
+                "\n[bold]SHA-256 Fingerprint[/bold]"
+            )
+
+            console.print(
+                f"  {result.sha256_fingerprint}"
+            )
 
 def print_http_cookies(
     cookies: list[CookieInfo]

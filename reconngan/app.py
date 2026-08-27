@@ -12,7 +12,7 @@ from rich.progress import (
     MofNCompleteColumn,
     TimeElapsedColumn,
 )
-
+from rich.table import Table
 
 #sub files
 from .models import (
@@ -41,10 +41,12 @@ from .reporting import (
     print_security_txt_info,
     print_url_candidates,
     print_content_results,
+    print_tls_info,
 )
 from .network import (
     normalize_url,
     fetch_url,
+    parse_tls_endpoint,
 )
 from .cli import parse_args
 from .http_recon import (
@@ -63,8 +65,10 @@ from .content_discovery import (
     discover_content,
     ContentDiscoveryInterrupted,
 )
-
-
+from .tls_recon import (
+    TLSProbeError,
+    probe_tls,
+)
 
 #console
 console = Console()
@@ -169,11 +173,40 @@ def main() -> int:
     security_txt_info = None
 
     content_results = []
+    tls_result = None
     scan_interrupted = False
 
-
     # =========================================================
-    # 5. OPTIONAL: REDIRECT RECONNAISSANCE
+    # OPTIONAL: TLS INTELLIGENCE
+    # =========================================================
+
+    if args.tls or args.all_modules:
+        try:
+            tls_host, tls_port = parse_tls_endpoint(
+                target
+            )
+
+            tls_result = probe_tls(
+                host=tls_host,
+                port=tls_port,
+                timeout=args.timeout,
+            )
+
+        except (
+            ValueError,
+            TLSProbeError,
+        ) as exc:
+            console.print(
+                f"\n[red][!] TLS probe failed: "
+                f"{escape(str(exc))}[/red]"
+            )
+
+        else:
+            print_tls_info(
+                tls_result
+            )
+    # =========================================================
+    # OPTIONAL: REDIRECT RECONNAISSANCE
     # =========================================================
 
     needs_redirect_data = (
@@ -416,6 +449,7 @@ def main() -> int:
             web_resources=web_resources,
             web_analysis=web_analysis,
             content_results=content_results,
+            tls_result=tls_result,
             findings=findings,
             score=score,
             grade=grade,
