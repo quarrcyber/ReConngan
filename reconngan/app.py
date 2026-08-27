@@ -67,6 +67,7 @@ from .content_discovery import (
 )
 from .tls_recon import (
     TLSProbeError,
+    collect_tls_hostname_candidates,
     probe_tls,
 )
 
@@ -175,6 +176,7 @@ def main() -> int:
     content_results = []
     tls_result = None
     scan_interrupted = False
+    hostname_candidates = []
 
     # =========================================================
     # OPTIONAL: TLS INTELLIGENCE
@@ -191,7 +193,11 @@ def main() -> int:
                 port=tls_port,
                 timeout=args.timeout,
             )
-
+            hostname_candidates = (
+                collect_tls_hostname_candidates(
+                    tls_result
+                )
+            )
         except (
             ValueError,
             TLSProbeError,
@@ -203,7 +209,8 @@ def main() -> int:
 
         else:
             print_tls_info(
-                tls_result
+                tls_result,
+                hostname_candidates,
             )
     # =========================================================
     # OPTIONAL: REDIRECT RECONNAISSANCE

@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 
-from .models import TLSResult
+from .models import (
+    HostnameCandidate,
+    TLSResult,
+)
 
 class TLSProbeError(Exception):
     """Raised when a TLS probe cannot be completed."""
@@ -62,6 +65,54 @@ def _hostname_is_covered(
         _dns_name_matches(host, pattern)
         for pattern in dns_names
     )
+def collect_tls_hostname_candidates(
+    result: TLSResult,
+) -> list[HostnameCandidate]:
+    candidates: list[HostnameCandidate] = []
+    seen: set[str] = set()
+
+    target_host = (
+        result.host
+        .rstrip(".")
+        .lower()
+    )
+
+    for raw_name in result.dns_names:
+        hostname = (
+            raw_name
+            .strip()
+            .rstrip(".")
+            .lower()
+        )
+
+        if not hostname:
+            continue
+
+        # Wildcard SAN is evidence of a namespace,
+        # but it is not a concrete resolvable hostname.
+        if "*" in hostname:
+            continue
+
+        # The original target is already known.
+        if hostname == target_host:
+            continue
+
+        if hostname in seen:
+            continue
+
+        seen.add(hostname)
+
+        candidates.append(
+            HostnameCandidate(
+                hostname=hostname,
+                source="tls:san",
+                certificate_fingerprint=(
+                    result.sha256_fingerprint
+                ),
+            )
+        )
+
+    return candidates
 
 
 def probe_tls(

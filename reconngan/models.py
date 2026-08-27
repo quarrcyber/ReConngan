@@ -112,6 +112,11 @@ class ContentProbe:
     soft_404: bool
     error: str | None
 # ---------------- TLS Intelligence ----------------
+@dataclass
+class HostnameCandidate:
+    hostname: str
+    source: str
+    certificate_fingerprint: str
 
 @dataclass
 class TLSResult:

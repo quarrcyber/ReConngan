@@ -20,9 +20,11 @@ from .models import (
     WebResourceAnalysis,
     TLSResult,
 )
-from .models import ContentProbe
-
-
+from .models import (
+    ContentProbe,
+    HostnameCandidate,
+    TLSResult,
+)
 console = Console()
 
 def status_style(status: str) -> str:
@@ -424,6 +426,7 @@ def print_http_metadata(
     console.print(table)
 def print_tls_info(
     result: TLSResult,
+    hostname_candidates: list[HostnameCandidate],
     san_limit: int = 20,
 ) -> None:
     table = Table(
@@ -573,7 +576,25 @@ def print_tls_info(
             console.print(
                 f"[dim]  ... {remaining} more[/dim]"
             )
+    if hostname_candidates:
+        console.print(
+            "\n[bold]Discovered Hostname Candidates[/bold]"
+        )
 
+        for candidate in hostname_candidates[:san_limit]:
+            console.print(
+                f"  {escape(candidate.hostname)}"
+            )
+
+        remaining = (
+            len(hostname_candidates)
+            - san_limit
+        )
+
+        if remaining > 0:
+            console.print(
+                f"[dim]  ... {remaining} more[/dim]"
+            )
 
 
 
