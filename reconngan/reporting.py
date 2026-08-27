@@ -484,7 +484,10 @@ def print_tls_info(
         "Valid From",
         result.valid_from,
     )
-
+    table.add_row(
+        "Serial Number",
+        result.serial_number or "-",
+    )
     table.add_row(
         "Valid Until",
         result.valid_until,
@@ -541,13 +544,42 @@ def print_tls_info(
             console.print(
                 f"  {result.sha256_fingerprint}"
             )
+    if result.warnings:
+        console.print(
+            "\n[bold yellow]TLS Findings[/bold yellow]"
+        )
+
+        for warning in result.warnings:
             console.print(
-                "\n[bold]SHA-256 Fingerprint[/bold]"
+                f"  [yellow]![/yellow] "
+                f"{escape(warning)}"
+            )
+    if result.ip_addresses:
+        console.print(
+            "\n[bold]IP Subject Alternative Names[/bold]"
+        )
+
+        for address in result.ip_addresses[:san_limit]:
+            console.print(
+                f"  {escape(address)}"
             )
 
+        remaining = (
+            len(result.ip_addresses)
+            - san_limit
+        )
+
+        if remaining > 0:
             console.print(
-                f"  {result.sha256_fingerprint}"
+                f"[dim]  ... {remaining} more[/dim]"
             )
+
+
+
+
+
+
+
 
 def print_http_cookies(
     cookies: list[CookieInfo]

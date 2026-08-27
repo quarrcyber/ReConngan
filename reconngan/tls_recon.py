@@ -236,8 +236,8 @@ def probe_tls(
         serial_number=serial_number,
         sha256_fingerprint=sha256_fingerprint,
 
-        valid_from=valid_from,
-        valid_until=valid_until,
+        valid_from=valid_from.isoformat(),
+        valid_until=valid_until.isoformat(),
         days_remaining=days_remaining,
 
         dns_names=dns_names,
