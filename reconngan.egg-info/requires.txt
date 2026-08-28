@@ -1,3 +1,4 @@
 httpx
 rich
 cryptography>=42
+dnspython>=2.6

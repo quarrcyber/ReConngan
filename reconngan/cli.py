@@ -95,6 +95,19 @@ def parse_args():
         action="store_true",
         help="Inspect TLS protocol and X.509 certificate",
     )
+    recon_group.add_argument(
+        "--resolve-hosts",
+        nargs="?",
+        const=50,
+        default=None,
+        type=positive_int,
+        metavar="N",
+        help=(
+            "Resolve discovered hostname candidates "
+            "via DNS, optionally at most N hosts "
+            "(default: 50)"
+        ),
+    )
 
     recon_group.add_argument(
         "--resources",

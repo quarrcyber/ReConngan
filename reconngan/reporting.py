@@ -24,6 +24,7 @@ from .models import (
     ContentProbe,
     HostnameCandidate,
     TLSResult,
+    DNSResolution,
 )
 console = Console()
 
@@ -289,6 +290,7 @@ def build_report_data(
     security_txt: SecurityTxtInfo | None,    
     content_results: list[ContentProbe],    
     tls_result: TLSResult | None,
+    hostname_candidates: list[HostnameCandidate],    
     score: float,
     grade: str,
 ) -> dict:
@@ -303,6 +305,10 @@ def build_report_data(
             if tls_result is not None
             else None
         ),
+        "hostname_candidates": [
+            asdict(candidate)
+            for candidate in hostname_candidates
+        ],
         "score": score,
         "grade": grade,
         "findings": [
@@ -596,8 +602,100 @@ def print_tls_info(
                 f"[dim]  ... {remaining} more[/dim]"
             )
 
+def print_dns_resolutions(
+    results: list[DNSResolution],
+) -> None:
 
+    if not results:
+        console.print(
+            "\n[dim]"
+            "No hostname candidates "
+            "available for DNS validation."
+            "[/dim]"
+        )
+        return
 
+    table = Table(
+        title="DNS Host Validation",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Hostname",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "IPv4",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "IPv6",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Canonical / Error",
+        overflow="fold",
+    )
+
+    for result in results:
+
+        status = (
+            "[green]RESOLVED[/green]"
+            if result.resolved
+            else "[yellow]UNRESOLVED[/yellow]"
+        )
+
+        ipv4 = (
+            ", ".join(
+                result.ipv4_addresses
+            )
+            or "-"
+        )
+
+        ipv6 = (
+            ", ".join(
+                result.ipv6_addresses
+            )
+            or "-"
+        )
+
+        detail = (
+            result.canonical_name
+            or "; ".join(result.errors)
+            or "-"
+        )
+
+        table.add_row(
+            escape(result.hostname),
+            status,
+            escape(ipv4),
+            escape(ipv6),
+            escape(detail),
+        )
+
+    console.print()
+    console.print(table)
+    resolved_count = sum(
+        1
+        for result in results
+        if result.resolved
+    )
+
+    console.print(
+        f"[dim]"
+        f"{resolved_count}/{len(results)} "
+        f"hostname candidates resolved"
+        f"[/dim]"
+    )
 
 
 

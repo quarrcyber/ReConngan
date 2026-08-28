@@ -42,6 +42,7 @@ from .reporting import (
     print_url_candidates,
     print_content_results,
     print_tls_info,
+    print_dns_resolutions,
 )
 from .network import (
     normalize_url,
@@ -70,7 +71,9 @@ from .tls_recon import (
     collect_tls_hostname_candidates,
     probe_tls,
 )
-
+from .dns_recon import (
+    resolve_hostname_candidates,
+)
 #console
 console = Console()
 
@@ -175,14 +178,20 @@ def main() -> int:
 
     content_results = []
     tls_result = None
-    scan_interrupted = False
     hostname_candidates = []
+    dns_resolutions = []
+
+    scan_interrupted = False
 
     # =========================================================
     # OPTIONAL: TLS INTELLIGENCE
     # =========================================================
-
-    if args.tls or args.all_modules:
+    needs_tls_data = (
+        args.tls
+        or args.resolve_hosts is not None
+        or args.all_modules
+    )
+    if needs_tls_data:
         try:
             tls_host, tls_port = parse_tls_endpoint(
                 target
@@ -206,12 +215,94 @@ def main() -> int:
                 f"\n[red][!] TLS probe failed: "
                 f"{escape(str(exc))}[/red]"
             )
-
         else:
-            print_tls_info(
-                tls_result,
-                hostname_candidates,
+            if args.tls or args.all_modules:
+                print_tls_info(
+                    tls_result,
+                    hostname_candidates,
+                )
+    # =========================================================
+    # OPTIONAL: DNS HOST VALIDATION
+    # =========================================================
+
+    if (
+        args.resolve_hosts is not None
+        or args.all_modules
+    ):
+        dns_limit = (
+            args.resolve_hosts
+            if args.resolve_hosts is not None
+            else 50
+        )
+
+        dns_started = time.perf_counter()
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(
+                "[cyan]{task.description}[/cyan]"
+            ),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+
+            total_hosts = min(
+                len(hostname_candidates),
+                dns_limit,
             )
+
+            task_id = progress.add_task(
+                "DNS validation",
+                total=total_hosts,
+            )
+
+            def update_dns_progress(
+                completed: int,
+                total: int,
+                current: str,
+            ) -> None:
+                progress.update(
+                    task_id,
+                    completed=completed,
+                    total=total,
+                    description=(
+                        f"DNS {current}"
+                    ),
+                )
+
+            dns_resolutions = (
+                resolve_hostname_candidates(
+                    candidates=hostname_candidates,
+                    timeout=args.timeout,
+                    max_candidates=dns_limit,
+                    progress_callback=(
+                        update_dns_progress
+                    ),
+                )
+            )
+
+        dns_elapsed = (
+            time.perf_counter()
+            - dns_started
+        )
+
+        print_dns_resolutions(
+            dns_resolutions
+        )
+
+        console.print(
+            "\n[green][+] DNS validation "
+            "completed.[/green] "
+            f"[dim]"
+            f"{len(dns_resolutions)} hosts "
+            f"in {dns_elapsed:.2f}s"
+            f"[/dim]"
+        )
+
+
     # =========================================================
     # OPTIONAL: REDIRECT RECONNAISSANCE
     # =========================================================
@@ -457,6 +548,8 @@ def main() -> int:
             web_analysis=web_analysis,
             content_results=content_results,
             tls_result=tls_result,
+            hostname_candidates=hostname_candidates,
+            dns_resolutions=dns_resolutions,
             findings=findings,
             score=score,
             grade=grade,

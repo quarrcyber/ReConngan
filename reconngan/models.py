@@ -117,6 +117,18 @@ class HostnameCandidate:
     hostname: str
     source: str
     certificate_fingerprint: str
+@dataclass
+class DNSResolution:
+    hostname: str
+    source: str
+
+    canonical_name: str | None
+
+    ipv4_addresses: list[str]
+    ipv6_addresses: list[str]
+
+    resolved: bool
+    errors: list[str]
 
 @dataclass
 class TLSResult:
