@@ -1,4 +1,79 @@
 import argparse
+import os
+import sys
+from pathlib import Path
+#color
+YELLOW = "\033[33m"
+RESET = "\033[0m"
+
+
+def color_help_enabled() -> bool:
+    """Return whether ANSI colors should be used in CLI help output."""
+    return (
+        sys.stdout.isatty()
+        and os.environ.get("NO_COLOR") is None
+    )
+
+
+def yellow_text(
+    value: str,
+) -> str:
+    """Color text yellow when help colors are enabled."""
+    if not color_help_enabled():
+        return value
+
+    return (
+        f"{YELLOW}"
+        f"{value}"
+        f"{RESET}"
+    )
+
+
+class ReconnganHelpFormatter(
+    argparse.RawDescriptionHelpFormatter
+):
+    """Argparse formatter with yellow section headings."""
+
+    COLORED_SECTIONS = {
+        "Positional arguments",
+        "Options",
+        "Network options",
+        "Reconnaissance modules",
+        "Output and policy",
+    }
+
+    def start_section(
+        self,
+        heading: str | None,
+    ) -> None:
+        if heading in self.COLORED_SECTIONS:
+            heading = yellow_text(
+                heading
+            )
+
+        super().start_section(
+            heading
+        )
+
+    def _format_usage(
+        self,
+        usage: str | None,
+        actions: list[argparse.Action],
+        groups: list[argparse._MutuallyExclusiveGroup],
+        prefix: str | None,
+    ) -> str:
+        if prefix is None:
+            prefix = yellow_text(
+                "Usage:"
+            ) + " "
+
+        return super()._format_usage(
+            usage,
+            actions,
+            groups,
+            prefix,
+        )
+#main
 def positive_int(value: str) -> int:
     try:
         number = int(value)
@@ -20,10 +95,10 @@ def wordlist_limit_int(
         value
     )
 
-    if number > 500:
+    if number > 50_000:
         raise argparse.ArgumentTypeError(
             "wordlist limit must not "
-            "exceed 500"
+            "exceed 50.000"
         )
 
     return number
@@ -38,17 +113,20 @@ def parse_args():
         epilog=(
             "Examples:\n"
             "  reconngan example.com\n"
-            "  reconngan example.com --cookies\n"
-            "  reconngan example.com --sitemap\n"
-            "  reconngan example.com --tls\n"
-            "  reconngan example.com --resolve-hosts\n"
-            "  reconngan example.com --services\n"        
-            "  reconngan example.com --content\n"
-            "  reconngan example.com --wordlist\n"
-            "  reconngan example.com --wordlist paths.txt\n"
+            "  reconngan example.com --dns\n"
+            "  reconngan example.com --target-ip\n"
+            "  reconngan example.com --check-tls\n"
+            "  reconngan example.com --check-cookies\n"
+            "  reconngan example.com --known-files\n"
+            "  reconngan example.com --show-redirects\n"
+            "  reconngan example.com --show-sitemap\n"
+            "  reconngan example.com --show-security-txt\n"
+            "  reconngan example.com --discover-content\n"
+            "  reconngan example.com --discover-paths paths.txt\n"
+            "  reconngan example.com --save-report report.json\n"
             "  reconngan example.com --all"
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=ReconnganHelpFormatter,
     )
 
     # =========================================================
@@ -60,6 +138,7 @@ def parse_args():
         help="Target URL or domain to scan",
     )
     parser.add_argument(
+        "-v",
         "--version",
         action="version",
         version="ReConngan 0.1.6",
@@ -82,133 +161,197 @@ def parse_args():
     )
 
     network_group.add_argument(
+        "--concurrency",
+        type=positive_int,
+        default=40,
+        metavar="N",
+        help=(
+            "Concurrent requests for active path discovery "
+            "(default: 40)"
+        ),
+    )
+
+    network_group.add_argument(
+        "--max-response-bytes",
+        type=positive_int,
+        default=16_384,
+        metavar="N",
+        help=(
+            "Maximum response bytes sampled per discovered path "
+            "(default: 16384)"
+        ),
+    )
+
+    network_group.add_argument(
         "--no-redirect",
+        dest="no_redirect",
         action="store_true",
-        help="Do not follow HTTP redirects",
+        help=(
+            "Do not follow HTTP redirects when fetching "
+            "the main target."
+        ),
     )
 
     # =========================================================
     # RECONNAISSANCE MODULES
     # =========================================================
-
     recon_group = parser.add_argument_group(
         "Reconnaissance modules"
     )
 
     recon_group.add_argument(
-        "--cookies",
+        "--check-cookies",
+        dest="cookies",
         action="store_true",
-        help="Analyze HTTP cookie security",
+        help=(
+            "Analyze Set-Cookie security attributes "
+            "(Secure, HttpOnly, SameSite)."
+        ),
     )
 
     recon_group.add_argument(
-        "--redirects",
+        "--show-redirects",
+        dest="redirects",
         action="store_true",
-        help="Show HTTP redirect chain",
+        help=(
+            "Show the HTTP redirect chain from the "
+            "original target to the final URL."
+        ),
     )
 
     recon_group.add_argument(
-        "--tls",
+        "--check-tls",
+        dest="tls",
         action="store_true",
-        help="Inspect TLS protocol and X.509 certificate",
+        help=(
+            "Inspect TLS protocol, certificate issuer, "
+            "expiry, SAN names, and certificate-derived hosts."
+        ),
     )
+
     recon_group.add_argument(
-        "--resolve-hosts",
+        "--dns",
+        "--target-ip",
+        dest="resolve_hosts",
         nargs="?",
         const=50,
         default=None,
         type=positive_int,
         metavar="N",
         help=(
-            "Resolve discovered hostname candidates "
-            "via DNS, optionally at most N hosts "
-            "(default: 50)"
+            "Resolve the target and discovered hostnames "
+            "to IP addresses using DNS. Optionally limit to "
+            "N hostnames (default: 50)."
         ),
     )
+
     recon_group.add_argument(
-        "--services",
+        "--check-services",
+        dest="services",
         nargs="?",
         const=25,
         default=None,
         type=positive_int,
         metavar="N",
         help=(
-            "Probe HTTPS/443 and HTTP/80 "
-            "on DNS-resolved hostname candidates, "
-            "optionally at most N hosts "
-            "(default: 25)"
+            "Check HTTP/80 and HTTPS/443 services on "
+            "DNS-resolved hosts. Optionally limit to "
+            "N hosts (default: 25)."
         ),
     )
 
     recon_group.add_argument(
-        "--resources",
+        "--known-files",
+        dest="resources",
         action="store_true",
-        help="Probe known web resources",
+        help=(
+            "Probe common well-known files such as "
+            "robots.txt, sitemap.xml, and security.txt."
+        ),
     )
 
     recon_group.add_argument(
-        "--sitemap",
+        "--show-sitemap",
+        dest="sitemap",
         action="store_true",
-        help="Discover and parse sitemap.xml",
+        help=(
+            "Fetch, parse, and display sitemap.xml "
+            "entries."
+        ),
     )
 
     recon_group.add_argument(
-        "--security-txt",
+        "--show-security-txt",
+        dest="security_txt",
         action="store_true",
-        help="Discover and parse security.txt",
+        help=(
+            "Fetch, parse, and display security.txt "
+            "contact and policy information."
+        ),
     )
 
     recon_group.add_argument(
-        "--candidates",
+        "--show-URL.candidates",
+        dest="candidates",
         action="store_true",
-        help="Show discovered URL candidates",
+        help=(
+            "Show discovered URL candidates from redirects, "
+            "known files, sitemap, security.txt, and wordlist "
+            "input."
+        ),
     )
 
     recon_group.add_argument(
-        "--content",
+        "--discover-content",
+        dest="content",
         nargs="?",
         const=50,
         default=None,
         type=positive_int,
         metavar="N",
         help=(
-            "Perform active content discovery, "
-            "optionally probing at most N candidates "
-            "(default: 50)"
+            "Run passive content discovery from known "
+            "resources and discovered URL candidates. "
+            "Optionally probe at most N candidates "
+            "(default: 50)."
         ),
     )
 
     recon_group.add_argument(
-        "--wordlist",
-        nargs="?",
-        const="",
+        "--discover-paths",
+        dest="wordlist",
+        type=Path,
         default=None,
         metavar="FILE",
         help=(
-            "Perform active wordlist discovery. "
-            "Optionally load paths from FILE; "
-            "without FILE use the built-in wordlist"
+            "Run active subdirectory/path discovery using "
+            "a wordlist file. Only existing paths are shown."
         ),
     )
 
     recon_group.add_argument(
         "--wordlist-limit",
+        dest="wordlist_limit",
         type=wordlist_limit_int,
-        default=100,
+        default=50_000,
         metavar="N",
         help=(
-            "Maximum wordlist candidates to probe "
-            "(default: 100, maximum: 500)"
+            "Maximum wordlist paths to probe "
+            "(default: 50000, maximum: 50000)."
         ),
     )
-    
+
     recon_group.add_argument(
         "--all",
         dest="all_modules",
         action="store_true",
-
-       help="Enable all reconnaissance modules",
+        help=(
+            "Enable all safe reconnaissance modules. "
+            "Active wordlist path discovery still requires "
+            "--discover-paths FILE."
+        ),
     )
+
 
     # =========================================================
     # OUTPUT / POLICY
@@ -219,13 +362,17 @@ def parse_args():
     )
 
     output_group.add_argument(
-        "--json",
+        "--save-report",
+        dest="json",
         metavar="FILE",
-        help="Write scan results to a JSON file",
+        help=(
+            "Save the full scan report to a JSON file."
+        ),
     )
 
+
     output_group.add_argument(
-        "--fail-under",
+        "--minimum-grade",
         type=str.upper,
         choices=[
             "A",

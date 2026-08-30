@@ -41,6 +41,7 @@ from .reporting import (
     print_security_txt_info,
     print_url_candidates,
     print_content_results,
+    print_path_discovery_results,
     print_tls_info,
     print_dns_resolutions,
     print_service_probes,
@@ -69,9 +70,11 @@ from .content_discovery import (
     ContentDiscoveryInterrupted,
 )
 from .wordlist_discovery import (
+    PathDiscoveryInterrupted,
     WordlistLoadError,
     build_wordlist_candidates,
     filter_interesting_wordlist_results,
+    discover_wordlist_paths,
     load_wordlist,
     merge_url_candidates,
 )
@@ -584,10 +587,8 @@ def main() -> int:
     # =========================================================
     # WORDLIST CANDIDATE GENERATION
     # =========================================================
-
     wordlist_requested = (
         args.wordlist is not None
-        or args.all_modules
     )
 
     if wordlist_requested:
@@ -596,12 +597,8 @@ def main() -> int:
         # --wordlist was provided without a file.
         #
         # None here therefore means use built-in entries.
-        wordlist_file = (
-            args.wordlist
-            if args.wordlist
-            else None
-        )
-
+        wordlist_file = args.wordlist
+        #wordlist included file
         try:
             (
                 wordlist_entries,
@@ -661,51 +658,25 @@ def main() -> int:
         )
 
     # =========================================================
-    # OPTIONAL: ACTIVE CONTENT / WORDLIST DISCOVERY
+    # OPTIONAL: PASSIVE CONTENT DISCOVERY
     # =========================================================
 
-    active_discovery_requested = (
+    content_discovery_requested = (
         args.content is not None
-        or args.wordlist is not None
         or args.all_modules
     )
 
-    if active_discovery_requested:
-
-        passive_candidates = []
-
-        if (
-            args.content is not None
-            or args.all_modules
-        ):
-            passive_limit = (
-                args.content
-                if args.content is not None
-                else 50
-            )
-
-            passive_candidates = (
-                web_analysis.candidates[:20]
-            )
-
-        active_wordlist_candidates = []
-
-        if wordlist_requested:
-            active_wordlist_candidates = (
-                wordlist_candidates
-            )
-
-        active_candidates = (
-        merge_url_candidates(
-                passive_candidates,
-                active_wordlist_candidates,
-            )
+    if content_discovery_requested:
+        passive_limit = (
+            args.content
+            if args.content is not None
+            else 50
         )
 
         content_started = (
             time.perf_counter()
         )
-#Progress
+
         try:
             with Progress(
                 SpinnerColumn(),
@@ -718,9 +689,8 @@ def main() -> int:
                 console=console,
                 transient=True,
             ) as progress:
-
                 task_id = progress.add_task(
-                    "Content discovery",
+                    "Passive content discovery",
                     total=None,
                 )
 
@@ -733,14 +703,17 @@ def main() -> int:
                         task_id,
                         completed=completed,
                         total=total,
+                        description=(
+                            "Content "
+                            f"{current}"
+                        ),
                     )
+
                 content_results = discover_content(
                     base_url=str(response.url),
                     candidates=web_analysis.candidates,
                     timeout=args.timeout,
-                    max_candidates=len(
-                        active_candidates
-                    ),
+                    max_candidates=passive_limit,
                     progress_callback=(
                         update_content_progress
                     ),
@@ -749,84 +722,123 @@ def main() -> int:
         except ContentDiscoveryInterrupted as exc:
             content_results = exc.results
             scan_interrupted = True
-        # -------------------------------------------------
-        # Separate results that belong to wordlist paths
-        # -------------------------------------------------
 
-        wordlist_urls = {
-            candidate.url
-            for candidate in wordlist_candidates
-        }
-
-        wordlist_results = [
-            result
-            for result in content_results
-            if result.url in wordlist_urls
-        ]
-#--
         content_elapsed = (
             time.perf_counter()
             - content_started
         )
-
-        wordlist_only = (
-            args.wordlist is not None
-            and args.content is None
-            and not args.all_modules
-        )
-
-        if wordlist_only:
-
-            interesting_results = (
-                filter_interesting_wordlist_results(
-                    wordlist_results
-                )
+    
+        if content_results:
+            print_content_results(
+                content_results
             )
 
-            if interesting_results:
-                print_content_results(
-                    interesting_results,
-                    title="Wordlist Discovery",
-                )
-
-            else:
-                console.print(
-                    "\n[dim]"
-                    "No interesting wordlist "
-                    "responses discovered."
-                    "[/dim]"
-                )
-
-        else:
-
-            if content_results:
-                print_content_results(
-                    content_results
-                )
         if scan_interrupted:
             console.print(
-                "\n[yellow][!] Active discovery "
+                "\n[yellow][!] Passive content discovery "
                 "cancelled by user.[/yellow]"
             )
-
-            console.print(
-                "[yellow]"
-                f"[+] Preserved "
-                f"{len(content_results)} completed probes"
-                f" after {content_elapsed:.2f}s."
-                "[/yellow]"
-            )
-
         else:
             console.print(
-                "\n[green][+] Active discovery "
+                "\n[green][+] Passive content discovery "
                 "completed.[/green] "
                 f"[dim]"
-                f"{len(content_results)} probes "
+                f"{len(content_results)} result(s) "
                 f"in {content_elapsed:.2f}s"
                 f"[/dim]"
             )
 
+
+    # =========================================================
+    # OPTIONAL: ACTIVE SUBDIRECTORY / PATH DISCOVERY
+    # =========================================================
+
+    if wordlist_requested:
+        path_started = (
+            time.perf_counter()
+        )
+    
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn(
+                    "[cyan]{task.description}[/cyan]"
+                ),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                task_id = progress.add_task(
+                    "Subdirectory/path discovery",
+                    total=len(wordlist_candidates),
+                )
+
+                def update_path_progress(
+                    completed: int,
+                    total: int,
+                    current: str,
+                ) -> None:
+                    progress.update(
+                        task_id,
+                        completed=completed,
+                        total=total,
+                        description=(
+                            "Path "
+                            f"{current}"
+                        ),
+                    )
+
+                wordlist_results = discover_wordlist_paths(
+                    base_url=str(response.url),
+                    candidates=wordlist_candidates,
+                    timeout=args.timeout,
+                    concurrency=args.concurrency,
+                    max_response_bytes=(
+                        args.max_response_bytes
+                    ),
+                    progress_callback=(
+                        update_path_progress
+                    ),
+                )
+
+        except PathDiscoveryInterrupted as exc:
+            wordlist_results = exc.results
+            scan_interrupted = True
+
+        path_elapsed = (
+            time.perf_counter()
+            - path_started
+        )
+
+        if wordlist_results:
+            print_path_discovery_results(
+                wordlist_results
+            )
+        else:
+            console.print(
+                "\n[dim]"
+                "No existing subdirectories or paths "
+                "discovered."
+                "[/dim]"
+            )
+
+        if scan_interrupted:
+            console.print(
+                "\n[yellow][!] Subdirectory/path discovery "
+                "cancelled by user.[/yellow]"
+            )
+        else:
+            console.print(
+                "\n[green][+] Subdirectory/path discovery "
+                "completed.[/green] "
+                f"[dim]"
+                f"{len(wordlist_candidates)} tested, "
+                f"{len(wordlist_results)} found "
+                f"in {path_elapsed:.2f}s"
+                f"[/dim]"
+            )
 
     # =========================================================
     # 14. JSON REPORT
@@ -868,38 +880,37 @@ def main() -> int:
             f"\n[green][+] JSON report saved to "
             f"{escape(args.json)}[/green]"
         )
-
     # =========================================================
     # 15. FAIL-UNDER POLICY
     # =========================================================
 
-        if scan_interrupted:
-            scan_elapsed = (
-                time.perf_counter()
-                - scan_started
-            )
+    if scan_interrupted:
+        scan_elapsed = (
+            time.perf_counter()
+            - scan_started
+        )
 
+        console.print(
+            f"\n[yellow][!] Scan stopped by user "
+            f"after {scan_elapsed:.2f}s.[/yellow]"
+        )
+
+    return 130
+
+
+    if args.fail_under:
+        if not grade_meets_threshold(
+            grade,
+            args.fail_under,
+        ):
             console.print(
-                f"\n[yellow][!] Scan stopped by user "
-                f"after {scan_elapsed:.2f}s.[/yellow]"
+                f"\n[red][!] Grade {grade} "
+                f"is below required grade "
+                f"{args.fail_under}.[/red]"
             )
-
-            return 130
-
-
-        if args.fail_under:
-
-            if not grade_meets_threshold(
-                grade,
-                args.fail_under,
-            ):
-                console.print(
-                    f"\n[red][!] Grade {grade} "
-                    f"is below required grade "
-                    f"{args.fail_under}.[/red]"
-                )
 
             return 1
+
     scan_elapsed = (
         time.perf_counter()
         - scan_started
@@ -911,5 +922,8 @@ def main() -> int:
     )
 
     return 0
+
+
+
 #===========================================
 #test offline part

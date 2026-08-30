@@ -1,5 +1,5 @@
 import json
-
+from urllib.parse import urlsplit
 from dataclasses import asdict
 
 from rich.console import Console
@@ -1298,3 +1298,131 @@ def print_content_results(
         )
 
     console.print(table)
+def _display_path_from_url(
+    url: str,
+) -> str:
+    parsed = urlsplit(
+        url
+    )
+
+    path = parsed.path or "/"
+
+    if parsed.query:
+        return (
+            f"{path}?{parsed.query}"
+        )
+
+    return path
+
+
+def _path_result_kind(
+    result: ContentProbe,
+) -> str:
+    path = urlsplit(
+        result.url
+    ).path
+
+    if path.endswith(
+        "/"
+    ):
+        return "DIR"
+
+    if (
+        result.status_code
+        in {
+            301,
+            302,
+            307,
+            308,
+        }
+        and result.redirect_to
+        and result.redirect_to.endswith(
+            "/"
+        )
+    ):
+        return "DIR"
+
+    return "PATH"
+
+
+def print_path_discovery_results(
+    results: list[ContentProbe],
+) -> None:
+    if not results:
+        return
+
+    table = Table(
+        title="Subdirectory / Path Discovery",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Class",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Kind",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Length",
+        justify="right",
+    )
+
+    table.add_column(
+        "Path",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Redirect",
+        overflow="fold",
+    )
+
+    for result in results:
+        status = (
+            str(result.status_code)
+            if result.status_code is not None
+            else "-"
+        )
+
+        length = (
+            str(result.content_length)
+            if result.content_length is not None
+            else "-"
+        )
+
+        redirect_to = (
+            result.redirect_to
+            if result.redirect_to
+            else "-"
+        )
+
+        table.add_row(
+            status,
+            result.classification,
+            _path_result_kind(
+                result
+            ),
+            length,
+            escape(
+                _display_path_from_url(
+                    result.url
+                )
+            ),
+            escape(
+                redirect_to
+            ),
+        )
+
+    console.print(
+        table
+    )
