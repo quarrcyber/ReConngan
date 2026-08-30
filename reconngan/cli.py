@@ -141,7 +141,7 @@ def parse_args():
         "-v",
         "--version",
         action="version",
-        version="ReConngan 0.1.6",
+        version="ReConngan 0.1.7",
     )
 
     # =========================================================
@@ -244,7 +244,14 @@ def parse_args():
             "N hostnames (default: 50)."
         ),
     )
-
+    recon_group.add_argument(
+        "--dns-records",
+        action="store_true",
+        help=(
+            "Query DNS records for the target domain "
+            "(A, AAAA, CNAME, MX, NS, TXT)"
+        ),
+    )
     recon_group.add_argument(
         "--check-services",
         dest="services",

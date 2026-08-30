@@ -130,6 +130,18 @@ class DNSResolution:
     resolved: bool
     errors: list[str]
 @dataclass
+class DNSRecord:
+    hostname: str
+    record_type: str
+    values: list[str]
+    error: str | None
+
+
+
+
+
+
+@dataclass
 class HostServiceProbe:
     hostname: str
     source: str

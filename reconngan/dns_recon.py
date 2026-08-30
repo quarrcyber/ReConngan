@@ -6,10 +6,18 @@ import dns.exception
 import dns.resolver
 
 from .models import (
+    DNSRecord,
     DNSResolution,
     HostnameCandidate,
 )
-
+DEFAULT_DNS_RECORD_TYPES: tuple[str, ...] = (
+    "A",
+    "AAAA",
+    "CNAME",
+    "MX",
+    "NS",
+    "TXT",
+)
 def _resolve_record_type(
     resolver: dns.resolver.Resolver,
     hostname: str,
@@ -93,6 +101,7 @@ def _resolve_record_type(
         canonical_name,
         None,
     )
+#candidate
 def resolve_hostname_candidate(
     resolver: dns.resolver.Resolver,
     candidate: HostnameCandidate,
@@ -163,6 +172,7 @@ def resolve_hostname_candidate(
         resolved=resolved,
         errors=errors,
     )
+#candidates
 def resolve_hostname_candidates(
     candidates: list[HostnameCandidate],
     timeout: float = 5.0,
@@ -172,12 +182,13 @@ def resolve_hostname_candidates(
         | None
     ) = None,
 ) -> list[DNSResolution]:
-
     selected = candidates[
         :max_candidates
     ]
 
-    total = len(selected)
+    total = len(
+        selected
+    )
 
     resolver = dns.resolver.Resolver(
         configure=True
@@ -209,6 +220,65 @@ def resolve_hostname_candidates(
     return results
 
 
+
+def query_dns_records(
+    hostname: str,
+    timeout: float = 5.0,
+    progress_callback: (
+        Callable[[int, int, str], None]
+        | None
+    ) = None,
+) -> list[DNSRecord]:
+    normalized_hostname = (
+        hostname
+        .rstrip(".")
+        .lower()
+    )
+
+    resolver = dns.resolver.Resolver(
+        configure=True
+    )
+
+    results: list[DNSRecord] = []
+    total = len(
+        DEFAULT_DNS_RECORD_TYPES
+    )
+
+    for index, record_type in enumerate(
+        DEFAULT_DNS_RECORD_TYPES,
+        start=1,
+    ):
+        (
+            values,
+            _canonical_name,
+            error,
+        ) = _resolve_record_type(
+            resolver=resolver,
+            hostname=normalized_hostname,
+            record_type=record_type,
+            timeout=timeout,
+        )
+
+        if not values and error is None:
+            error = "NOANSWER"
+
+        results.append(
+            DNSRecord(
+                hostname=normalized_hostname,
+                record_type=record_type,
+                values=values,
+                error=error,
+            )
+        )
+
+        if progress_callback:
+            progress_callback(
+                index,
+                total,
+                record_type,
+            )
+
+    return results
 
 
 

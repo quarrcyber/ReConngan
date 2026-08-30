@@ -25,6 +25,8 @@ from .models import (
 
     WebResourceAnalysis,
     TLSResult,
+    DNSRecord,
+    DNSResolution,
 )
 from .models import (
     ContentProbe,
@@ -726,6 +728,64 @@ def print_dns_resolutions(
         f"hostname candidates resolved"
         f"[/dim]"
     )
+#dns record
+def print_dns_records(
+    records: list[DNSRecord],
+) -> None:
+    if not records:
+        return
+
+    table = Table(
+        title="DNS Records",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Type",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Host",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Values",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Error",
+        overflow="fold",
+    )
+
+    for record in records:
+        values = (
+            ", ".join(record.values)
+            if record.values
+            else "-"
+        )
+
+        error = (
+            record.error
+            if record.error
+            else "-"
+        )
+
+        table.add_row(
+            record.record_type,
+            escape(record.hostname),
+            escape(values),
+            escape(error),
+        )
+
+    console.print(
+        table
+    )
+
+
 
 def print_service_probes(
     results: list[HostServiceProbe],

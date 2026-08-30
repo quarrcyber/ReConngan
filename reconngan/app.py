@@ -1,6 +1,9 @@
 import json
 import httpx
 import time
+from urllib.parse import urlsplit, urljoin
+from pathlib import Path
+
 
 from rich.console import Console
 from rich.markup import escape
@@ -45,6 +48,7 @@ from .reporting import (
     print_tls_info,
     print_dns_resolutions,
     print_service_probes,
+    print_dns_records,
 
 )
 from .network import (
@@ -85,13 +89,14 @@ from .tls_recon import (
     collect_tls_hostname_candidates,
     probe_tls,
 )
-from .dns_recon import (
-    resolve_hostname_candidates,
-)
 from .service_recon import (
     probe_resolved_host_services,
 )
-
+from .dns_recon import (
+    DEFAULT_DNS_RECORD_TYPES,
+    query_dns_records,
+    resolve_hostname_candidates,
+)
 
 
 #console
@@ -358,7 +363,81 @@ def main() -> int:
                 f"in {dns_elapsed:.2f}s"
                 f"[/dim]"
             )
+    # =========================================================
+    # OPTIONAL: DNS RECORD ENUMERATION
+    # =========================================================
 
+    if args.dns_records or args.all_modules:
+        target_hostname = urlsplit(
+            url
+        ).hostname
+
+        if not target_hostname:
+            console.print(
+                "\n[red][!] Unable to determine target "
+                "hostname for DNS records.[/red]"
+            )
+            return 2
+
+        dns_records_started = (
+            time.perf_counter()
+        )
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(
+                "[cyan]{task.description}[/cyan]"
+            ),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task_id = progress.add_task(
+                "DNS records",
+                total=len(DEFAULT_DNS_RECORD_TYPES),
+            )
+
+            def update_dns_records_progress(
+                completed: int,
+                total: int,
+                current: str,
+            ) -> None:
+                progress.update(
+                    task_id,
+                    completed=completed,
+                    total=total,
+                    description=(
+                        f"DNS record {current}"
+                    ),
+                )
+
+            dns_records = query_dns_records(
+                hostname=target_hostname,
+                timeout=args.timeout,
+                progress_callback=(
+                    update_dns_records_progress
+                ),
+            )
+
+        dns_records_elapsed = (
+            time.perf_counter()
+            - dns_records_started
+        )
+
+        print_dns_records(
+            dns_records
+        )
+
+        console.print(
+            "\n[green][+] DNS records "
+            "completed.[/green] "
+            f"[dim]"
+            f"{len(DEFAULT_DNS_RECORD_TYPES)} type(s) "
+            f"in {dns_records_elapsed:.2f}s"
+            f"[/dim]"
+        )
     # =========================================================
     # OPTIONAL: SERVICE VALIDATION
     # =========================================================
