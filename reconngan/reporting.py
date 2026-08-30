@@ -1,5 +1,5 @@
 import json
-
+from urllib.parse import urlsplit
 from dataclasses import asdict
 
 from rich.console import Console
@@ -17,11 +17,22 @@ from .models import (
     SitemapInfo,
     SecurityTxtInfo,
     URLCandidate,
+
+    ContentProbe,
+    HostnameCandidate,
+    DNSResolution,
+    HostServiceProbe,
+
     WebResourceAnalysis,
+    TLSResult,
 )
-from .models import ContentProbe
-
-
+from .models import (
+    ContentProbe,
+    HostnameCandidate,
+    TLSResult,
+    DNSResolution,
+    HostServiceProbe,
+)
 console = Console()
 
 def status_style(status: str) -> str:
@@ -285,6 +296,13 @@ def build_report_data(
     web_analysis: WebResourceAnalysis,    
     security_txt: SecurityTxtInfo | None,    
     content_results: list[ContentProbe],    
+
+    wordlist_candidates: list[URLCandidate],
+    wordlist_results: list[ContentProbe],
+
+    tls_result: TLSResult | None,
+    hostname_candidates: list[HostnameCandidate],    
+    service_probes: list[HostServiceProbe],
     score: float,
     grade: str,
 ) -> dict:
@@ -294,6 +312,15 @@ def build_report_data(
         "final_url": final_url,
         "status_code": status_code,
         "http": asdict(metadata),
+        "tls": (
+            asdict(tls_result)
+            if tls_result is not None
+            else None
+        ),
+        "hostname_candidates": [
+            asdict(candidate)
+            for candidate in hostname_candidates
+        ],
         "score": score,
         "grade": grade,
         "findings": [
@@ -345,12 +372,30 @@ def build_report_data(
                 in web_analysis.candidates
             ],
         },
+        "dns_validation": [
+            asdict(result)
+            for result in dns_resolutions
+        ],
+        "service_validation": [
+            asdict(result)
+            for result in service_probes
+        ],
         "content_discovery": [
             asdict(result)
             for result in content_results
         ],
 
+        "wordlist_discovery": {
+            "candidates": [
+                asdict(candidate)
+                for candidate in wordlist_candidates
+            ],
 
+            "results": [
+                asdict(result)
+                for result in wordlist_results
+            ],
+        },
 
 
 
@@ -415,6 +460,385 @@ def print_http_metadata(
     )
 
     console.print(table)
+def print_tls_info(
+    result: TLSResult,
+    hostname_candidates: list[HostnameCandidate],
+    san_limit: int = 20,
+) -> None:
+    table = Table(
+        title="TLS Intelligence",
+        show_header=False,
+    )
+
+    table.add_column(
+        "Field",
+        style="bold",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Value",
+    )
+
+    table.add_row(
+        "Endpoint",
+        f"{result.host}:{result.port}",
+    )
+
+    table.add_row(
+        "TLS Version",
+        result.version or "-",
+    )
+
+    table.add_row(
+        "Cipher",
+        result.cipher or "-",
+    )
+
+    table.add_row(
+        "Cipher Bits",
+        (
+            str(result.cipher_bits)
+            if result.cipher_bits is not None
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "ALPN",
+        result.alpn or "-",
+    )
+
+    table.add_row(
+        "Subject",
+        escape(result.subject),
+    )
+
+    table.add_row(
+        "Issuer",
+        escape(result.issuer),
+    )
+
+    table.add_row(
+        "Valid From",
+        result.valid_from,
+    )
+    table.add_row(
+        "Serial Number",
+        result.serial_number or "-",
+    )
+    table.add_row(
+        "Valid Until",
+        result.valid_until,
+    )
+
+    table.add_row(
+        "Days Remaining",
+        str(result.days_remaining),
+    )
+
+    table.add_row(
+        "Hostname Match",
+        (
+            "[green]YES[/green]"
+            if result.hostname_match
+            else "[red]NO[/red]"
+        ),
+    )
+
+    table.add_row(
+        "DNS SANs",
+        str(len(result.dns_names)),
+    )
+
+    table.add_row(
+        "IP SANs",
+        str(len(result.ip_addresses)),
+    )
+
+    console.print(table)
+    if result.dns_names:
+        console.print(
+            "\n[bold]Subject Alternative Names[/bold]"
+        )
+
+        for name in result.dns_names[:san_limit]:
+            console.print(
+                f"  {escape(name)}"
+            )
+
+        remaining = (
+            len(result.dns_names)
+            - san_limit
+        )
+
+        if remaining > 0:
+            console.print(
+                f"[dim]  ... {remaining} more[/dim]"
+            )
+            console.print(
+                "\n[bold]SHA-256 Fingerprint[/bold]"
+            )
+
+            console.print(
+                f"  {result.sha256_fingerprint}"
+            )
+    if result.warnings:
+        console.print(
+            "\n[bold yellow]TLS Findings[/bold yellow]"
+        )
+
+        for warning in result.warnings:
+            console.print(
+                f"  [yellow]![/yellow] "
+                f"{escape(warning)}"
+            )
+    if result.ip_addresses:
+        console.print(
+            "\n[bold]IP Subject Alternative Names[/bold]"
+        )
+
+        for address in result.ip_addresses[:san_limit]:
+            console.print(
+                f"  {escape(address)}"
+            )
+
+        remaining = (
+            len(result.ip_addresses)
+            - san_limit
+        )
+
+        if remaining > 0:
+            console.print(
+                f"[dim]  ... {remaining} more[/dim]"
+            )
+    if hostname_candidates:
+        console.print(
+            "\n[bold]Discovered Hostname Candidates[/bold]"
+        )
+
+        for candidate in hostname_candidates[:san_limit]:
+            console.print(
+                f"  {escape(candidate.hostname)}"
+            )
+
+        remaining = (
+            len(hostname_candidates)
+            - san_limit
+        )
+
+        if remaining > 0:
+            console.print(
+                f"[dim]  ... {remaining} more[/dim]"
+            )
+
+def print_dns_resolutions(
+    results: list[DNSResolution],
+) -> None:
+
+    if not results:
+        console.print(
+            "\n[dim]"
+            "No hostname candidates "
+            "available for DNS validation."
+            "[/dim]"
+        )
+        return
+
+    table = Table(
+        title="DNS Host Validation",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Hostname",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "IPv4",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "IPv6",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Canonical / Error",
+        overflow="fold",
+    )
+
+    for result in results:
+
+        status = (
+            "[green]RESOLVED[/green]"
+            if result.resolved
+            else "[yellow]UNRESOLVED[/yellow]"
+        )
+
+        ipv4 = (
+            ", ".join(
+                result.ipv4_addresses
+            )
+            or "-"
+        )
+
+        ipv6 = (
+            ", ".join(
+                result.ipv6_addresses
+            )
+            or "-"
+        )
+
+        detail = (
+            result.canonical_name
+            or "; ".join(result.errors)
+            or "-"
+        )
+
+        table.add_row(
+            escape(result.hostname),
+            status,
+            escape(ipv4),
+            escape(ipv6),
+            escape(detail),
+        )
+
+    console.print()
+    console.print(table)
+    resolved_count = sum(
+        1
+        for result in results
+        if result.resolved
+    )
+
+    console.print(
+        f"[dim]"
+        f"{resolved_count}/{len(results)} "
+        f"hostname candidates resolved"
+        f"[/dim]"
+    )
+
+def print_service_probes(
+    results: list[HostServiceProbe],
+) -> None:
+
+    if not results:
+        console.print(
+            "\n[dim]"
+            "No DNS-resolved hostname candidates "
+            "available for service validation."
+            "[/dim]"
+        )
+        return
+
+    table = Table(
+        title="Host Service Validation",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Hostname",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Service",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Reachable",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Redirect",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Final URL / Error",
+        overflow="fold",
+    )
+
+    for result in results:
+
+        service = (
+            f"{result.scheme.upper()}:"
+            f"{result.port}"
+        )
+
+        reachable = (
+            "[green]YES[/green]"
+            if result.reachable
+            else "[yellow]NO[/yellow]"
+        )
+
+        if result.status_code is not None:
+            status_color = http_status_style(
+                result.status_code
+            )
+
+            status = (
+                f"[{status_color}]"
+                f"{result.status_code}"
+                f"[/{status_color}]"
+            )
+        else:
+            status = "-"
+
+        redirected = (
+            "[cyan]YES[/cyan]"
+            if result.redirected
+            else "NO"
+        )
+
+        detail = (
+            result.final_url
+            or result.error
+            or "-"
+        )
+
+        table.add_row(
+            escape(result.hostname),
+            service,
+            reachable,
+            status,
+            redirected,
+            escape(detail),
+        )
+
+    console.print()
+    console.print(table)
+
+    reachable_count = sum(
+        1
+        for result in results
+        if result.reachable
+    )
+
+    console.print(
+        f"[dim]"
+        f"{reachable_count}/{len(results)} "
+        f"service endpoints reachable"
+        f"[/dim]"
+    )
+
 
 def print_http_cookies(
     cookies: list[CookieInfo]
@@ -811,14 +1235,15 @@ def print_url_candidates(
             f"[/dim]"
         )
 def print_content_results(
-    results: list[ContentProbe]
+    results: list[ContentProbe],
+    title: str = "Content Discovery",
 ) -> None:
 
     if not results:
         return
 
     table = Table(
-        title="Content Discovery",
+        title=title,
         show_header=True,
         header_style="bold",
     )
@@ -873,3 +1298,131 @@ def print_content_results(
         )
 
     console.print(table)
+def _display_path_from_url(
+    url: str,
+) -> str:
+    parsed = urlsplit(
+        url
+    )
+
+    path = parsed.path or "/"
+
+    if parsed.query:
+        return (
+            f"{path}?{parsed.query}"
+        )
+
+    return path
+
+
+def _path_result_kind(
+    result: ContentProbe,
+) -> str:
+    path = urlsplit(
+        result.url
+    ).path
+
+    if path.endswith(
+        "/"
+    ):
+        return "DIR"
+
+    if (
+        result.status_code
+        in {
+            301,
+            302,
+            307,
+            308,
+        }
+        and result.redirect_to
+        and result.redirect_to.endswith(
+            "/"
+        )
+    ):
+        return "DIR"
+
+    return "PATH"
+
+
+def print_path_discovery_results(
+    results: list[ContentProbe],
+) -> None:
+    if not results:
+        return
+
+    table = Table(
+        title="Subdirectory / Path Discovery",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Class",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Kind",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Length",
+        justify="right",
+    )
+
+    table.add_column(
+        "Path",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Redirect",
+        overflow="fold",
+    )
+
+    for result in results:
+        status = (
+            str(result.status_code)
+            if result.status_code is not None
+            else "-"
+        )
+
+        length = (
+            str(result.content_length)
+            if result.content_length is not None
+            else "-"
+        )
+
+        redirect_to = (
+            result.redirect_to
+            if result.redirect_to
+            else "-"
+        )
+
+        table.add_row(
+            status,
+            result.classification,
+            _path_result_kind(
+                result
+            ),
+            length,
+            escape(
+                _display_path_from_url(
+                    result.url
+                )
+            ),
+            escape(
+                redirect_to
+            ),
+        )
+
+    console.print(
+        table
+    )

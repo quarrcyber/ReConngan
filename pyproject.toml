@@ -5,13 +5,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reconngan"
-version = "0.1.2"
+version = "0.1.6"
 description = "Evidence-driven HTTP security reconnaissance scanner"
 requires-python = ">=3.10"
 
 dependencies = [
     "httpx",
     "rich",
+    "cryptography>=42",
+    "dnspython>=2.6",
 ]
 
 

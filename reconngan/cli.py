@@ -1,53 +1,378 @@
 import argparse
+import os
+import sys
+from pathlib import Path
+#color
+YELLOW = "\033[33m"
+RESET = "\033[0m"
+
+
+def color_help_enabled() -> bool:
+    """Return whether ANSI colors should be used in CLI help output."""
+    return (
+        sys.stdout.isatty()
+        and os.environ.get("NO_COLOR") is None
+    )
+
+
+def yellow_text(
+    value: str,
+) -> str:
+    """Color text yellow when help colors are enabled."""
+    if not color_help_enabled():
+        return value
+
+    return (
+        f"{YELLOW}"
+        f"{value}"
+        f"{RESET}"
+    )
+
+
+class ReconnganHelpFormatter(
+    argparse.RawDescriptionHelpFormatter
+):
+    """Argparse formatter with yellow section headings."""
+
+    COLORED_SECTIONS = {
+        "Positional arguments",
+        "Options",
+        "Network options",
+        "Reconnaissance modules",
+        "Output and policy",
+    }
+
+    def start_section(
+        self,
+        heading: str | None,
+    ) -> None:
+        if heading in self.COLORED_SECTIONS:
+            heading = yellow_text(
+                heading
+            )
+
+        super().start_section(
+            heading
+        )
+
+    def _format_usage(
+        self,
+        usage: str | None,
+        actions: list[argparse.Action],
+        groups: list[argparse._MutuallyExclusiveGroup],
+        prefix: str | None,
+    ) -> str:
+        if prefix is None:
+            prefix = yellow_text(
+                "Usage:"
+            ) + " "
+
+        return super()._format_usage(
+            usage,
+            actions,
+            groups,
+            prefix,
+        )
+#main
+def positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be an integer"
+        ) from exc
+
+    if number < 1:
+        raise argparse.ArgumentTypeError(
+            "must be greater than 0"
+        )
+
+    return number
+def wordlist_limit_int(
+    value: str,
+) -> int:
+    number = positive_int(
+        value
+    )
+
+    if number > 50_000:
+        raise argparse.ArgumentTypeError(
+            "wordlist limit must not "
+            "exceed 50.000"
+        )
+
+    return number
 
 def parse_args():
-
     parser = argparse.ArgumentParser(
         prog="reconngan",
         description=(
-            "ReConngan - HTTP security headers "
+            "Evidence-driven HTTP security "
             "reconnaissance scanner"
         ),
+        epilog=(
+            "Examples:\n"
+            "  reconngan example.com\n"
+            "  reconngan example.com --dns\n"
+            "  reconngan example.com --target-ip\n"
+            "  reconngan example.com --check-tls\n"
+            "  reconngan example.com --check-cookies\n"
+            "  reconngan example.com --known-files\n"
+            "  reconngan example.com --show-redirects\n"
+            "  reconngan example.com --show-sitemap\n"
+            "  reconngan example.com --show-security-txt\n"
+            "  reconngan example.com --discover-content\n"
+            "  reconngan example.com --discover-paths paths.txt\n"
+            "  reconngan example.com --save-report report.json\n"
+            "  reconngan example.com --all"
+        ),
+        formatter_class=ReconnganHelpFormatter,
     )
+
+    # =========================================================
+    # TARGET
+    # =========================================================
 
     parser.add_argument(
         "target",
         help="Target URL or domain to scan",
     )
-
     parser.add_argument(
+        "-v",
         "--version",
         action="version",
-        version="ReConngan 0.1.0",
+        version="ReConngan 0.1.6",
     )
 
-    parser.add_argument(
+    # =========================================================
+    # NETWORK OPTIONS
+    # =========================================================
+
+    network_group = parser.add_argument_group(
+        "Network options"
+    )
+
+    network_group.add_argument(
         "--timeout",
         type=float,
         default=10.0,
+        metavar="SECONDS",
+        help="Request timeout in seconds (default: 10)",
+    )
+
+    network_group.add_argument(
+        "--concurrency",
+        type=positive_int,
+        default=40,
+        metavar="N",
         help=(
-            "Request timeout in seconds "
-            "(default: 10)"
+            "Concurrent requests for active path discovery "
+            "(default: 40)"
         ),
     )
 
-    parser.add_argument(
-        "--no-redirect",
-        action="store_true",
-        help="Do not follow HTTP redirects",
+    network_group.add_argument(
+        "--max-response-bytes",
+        type=positive_int,
+        default=16_384,
+        metavar="N",
+        help=(
+            "Maximum response bytes sampled per discovered path "
+            "(default: 16384)"
+        ),
     )
 
-    parser.add_argument(
-        "--json",
+    network_group.add_argument(
+        "--no-redirect",
+        dest="no_redirect",
+        action="store_true",
+        help=(
+            "Do not follow HTTP redirects when fetching "
+            "the main target."
+        ),
+    )
+
+    # =========================================================
+    # RECONNAISSANCE MODULES
+    # =========================================================
+    recon_group = parser.add_argument_group(
+        "Reconnaissance modules"
+    )
+
+    recon_group.add_argument(
+        "--check-cookies",
+        dest="cookies",
+        action="store_true",
+        help=(
+            "Analyze Set-Cookie security attributes "
+            "(Secure, HttpOnly, SameSite)."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--show-redirects",
+        dest="redirects",
+        action="store_true",
+        help=(
+            "Show the HTTP redirect chain from the "
+            "original target to the final URL."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--check-tls",
+        dest="tls",
+        action="store_true",
+        help=(
+            "Inspect TLS protocol, certificate issuer, "
+            "expiry, SAN names, and certificate-derived hosts."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--dns",
+        "--target-ip",
+        dest="resolve_hosts",
+        nargs="?",
+        const=50,
+        default=None,
+        type=positive_int,
+        metavar="N",
+        help=(
+            "Resolve the target and discovered hostnames "
+            "to IP addresses using DNS. Optionally limit to "
+            "N hostnames (default: 50)."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--check-services",
+        dest="services",
+        nargs="?",
+        const=25,
+        default=None,
+        type=positive_int,
+        metavar="N",
+        help=(
+            "Check HTTP/80 and HTTPS/443 services on "
+            "DNS-resolved hosts. Optionally limit to "
+            "N hosts (default: 25)."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--known-files",
+        dest="resources",
+        action="store_true",
+        help=(
+            "Probe common well-known files such as "
+            "robots.txt, sitemap.xml, and security.txt."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--show-sitemap",
+        dest="sitemap",
+        action="store_true",
+        help=(
+            "Fetch, parse, and display sitemap.xml "
+            "entries."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--show-security-txt",
+        dest="security_txt",
+        action="store_true",
+        help=(
+            "Fetch, parse, and display security.txt "
+            "contact and policy information."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--show-URL.candidates",
+        dest="candidates",
+        action="store_true",
+        help=(
+            "Show discovered URL candidates from redirects, "
+            "known files, sitemap, security.txt, and wordlist "
+            "input."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--discover-content",
+        dest="content",
+        nargs="?",
+        const=50,
+        default=None,
+        type=positive_int,
+        metavar="N",
+        help=(
+            "Run passive content discovery from known "
+            "resources and discovered URL candidates. "
+            "Optionally probe at most N candidates "
+            "(default: 50)."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--discover-paths",
+        dest="wordlist",
+        type=Path,
+        default=None,
         metavar="FILE",
         help=(
-            "Write scan results "
-            "to a JSON file"
+            "Run active subdirectory/path discovery using "
+            "a wordlist file. Only existing paths are shown."
         ),
     )
 
-    parser.add_argument(
-        "--fail-under",
+    recon_group.add_argument(
+        "--wordlist-limit",
+        dest="wordlist_limit",
+        type=wordlist_limit_int,
+        default=50_000,
+        metavar="N",
+        help=(
+            "Maximum wordlist paths to probe "
+            "(default: 50000, maximum: 50000)."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--all",
+        dest="all_modules",
+        action="store_true",
+        help=(
+            "Enable all safe reconnaissance modules. "
+            "Active wordlist path discovery still requires "
+            "--discover-paths FILE."
+        ),
+    )
+
+
+    # =========================================================
+    # OUTPUT / POLICY
+    # =========================================================
+
+    output_group = parser.add_argument_group(
+        "Output and policy"
+    )
+
+    output_group.add_argument(
+        "--save-report",
+        dest="json",
+        metavar="FILE",
+        help=(
+            "Save the full scan report to a JSON file."
+        ),
+    )
+
+
+    output_group.add_argument(
+        "--minimum-grade",
         type=str.upper,
         choices=[
             "A",
@@ -58,10 +383,10 @@ def parse_args():
         ],
         metavar="GRADE",
         help=(
-            "Exit with code 1 if "
-            "the scan grade is below "
-            "this grade"
+            "Exit with code 1 if the scan grade "
+            "is below this grade"
         ),
     )
 
     return parser.parse_args()
+
