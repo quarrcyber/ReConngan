@@ -129,7 +129,22 @@ class DNSResolution:
 
     resolved: bool
     errors: list[str]
+@dataclass
+class HostServiceProbe:
+    hostname: str
+    source: str
 
+    scheme: str
+    port: int
+    url: str
+
+    reachable: bool
+    status_code: int | None
+
+    final_url: str | None
+    redirected: bool
+
+    error: str | None
 @dataclass
 class TLSResult:
     host: str

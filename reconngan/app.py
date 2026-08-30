@@ -43,6 +43,8 @@ from .reporting import (
     print_content_results,
     print_tls_info,
     print_dns_resolutions,
+    print_service_probes,
+
 )
 from .network import (
     normalize_url,
@@ -66,6 +68,15 @@ from .content_discovery import (
     discover_content,
     ContentDiscoveryInterrupted,
 )
+from .wordlist_discovery import (
+    WordlistLoadError,
+    build_wordlist_candidates,
+    filter_interesting_wordlist_results,
+    load_wordlist,
+    merge_url_candidates,
+)
+
+
 from .tls_recon import (
     TLSProbeError,
     collect_tls_hostname_candidates,
@@ -74,6 +85,12 @@ from .tls_recon import (
 from .dns_recon import (
     resolve_hostname_candidates,
 )
+from .service_recon import (
+    probe_resolved_host_services,
+)
+
+
+
 #console
 console = Console()
 
@@ -177,20 +194,28 @@ def main() -> int:
     security_txt_info = None
 
     content_results = []
+    wordlist_candidates = []
+    wordlist_results = []
+
     tls_result = None
     hostname_candidates = []
     dns_resolutions = []
+    service_probes = []
+
 
     scan_interrupted = False
 
     # =========================================================
     # OPTIONAL: TLS INTELLIGENCE
     # =========================================================
+
     needs_tls_data = (
         args.tls
         or args.resolve_hosts is not None
+        or args.services is not None
         or args.all_modules
     )
+
     if needs_tls_data:
         try:
             tls_host, tls_port = parse_tls_endpoint(
@@ -202,11 +227,13 @@ def main() -> int:
                 port=tls_port,
                 timeout=args.timeout,
             )
+
             hostname_candidates = (
                 collect_tls_hostname_candidates(
                     tls_result
                 )
             )
+
         except (
             ValueError,
             TLSProbeError,
@@ -215,24 +242,44 @@ def main() -> int:
                 f"\n[red][!] TLS probe failed: "
                 f"{escape(str(exc))}[/red]"
             )
+
         else:
             if args.tls or args.all_modules:
                 print_tls_info(
                     tls_result,
                     hostname_candidates,
                 )
+
     # =========================================================
     # OPTIONAL: DNS HOST VALIDATION
     # =========================================================
 
-    if (
+    needs_dns_data = (
         args.resolve_hosts is not None
+        or args.services is not None
         or args.all_modules
-    ):
-        dns_limit = (
-            args.resolve_hosts
-            if args.resolve_hosts is not None
-            else 50
+    )
+
+    if needs_dns_data:
+
+        dns_limits: list[int] = []
+
+        if args.resolve_hosts is not None:
+            dns_limits.append(
+                args.resolve_hosts
+            )
+
+        if args.services is not None:
+            dns_limits.append(
+                args.services
+            )
+
+        if args.all_modules:
+            dns_limits.append(50)
+
+        dns_limit = max(
+            dns_limits,
+            default=50,
         )
 
         dns_started = time.perf_counter()
@@ -240,7 +287,9 @@ def main() -> int:
         with Progress(
             SpinnerColumn(),
             TextColumn(
-                "[cyan]{task.description}[/cyan]"
+                "[cyan]"
+                "{task.description}"
+                "[/cyan]"
             ),
             BarColumn(),
             MofNCompleteColumn(),
@@ -264,6 +313,7 @@ def main() -> int:
                 total: int,
                 current: str,
             ) -> None:
+
                 progress.update(
                     task_id,
                     completed=completed,
@@ -289,19 +339,120 @@ def main() -> int:
             - dns_started
         )
 
-        print_dns_resolutions(
-            dns_resolutions
+        if (
+            args.resolve_hosts is not None
+            or args.all_modules
+        ):
+            print_dns_resolutions(
+                dns_resolutions
+            )
+
+            console.print(
+                "\n[green][+] DNS validation "
+                "completed.[/green] "
+                f"[dim]"
+                f"{len(dns_resolutions)} hosts "
+                f"in {dns_elapsed:.2f}s"
+                f"[/dim]"
+            )
+
+    # =========================================================
+    # OPTIONAL: SERVICE VALIDATION
+    # =========================================================
+
+    if (
+        args.services is not None
+        or args.all_modules
+    ):
+        service_limit = (
+            args.services
+            if args.services is not None
+            else 25
+        )
+
+        service_started = (
+            time.perf_counter()
+        )
+
+        resolved_hosts = sum(
+            1
+            for result in dns_resolutions
+            if result.resolved
+        )
+
+        total_endpoints = (
+            min(
+                resolved_hosts,
+                service_limit,
+            )
+            * 2
+        )
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(
+                "[cyan]"
+                "{task.description}"
+                "[/cyan]"
+            ),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+
+            task_id = progress.add_task(
+                "Service validation",
+                total=total_endpoints,
+            )
+
+            def update_service_progress(
+                completed: int,
+                total: int,
+                current: str,
+            ) -> None:
+
+                progress.update(
+                    task_id,
+                    completed=completed,
+                    total=total,
+                    description=(
+                        f"Service {current}"
+                    ),
+                )
+
+            service_probes = (
+                probe_resolved_host_services(
+                    resolutions=dns_resolutions,
+                    timeout=args.timeout,
+                    max_hosts=service_limit,
+                    follow_redirects=(
+                        not args.no_redirect
+                    ),
+                    progress_callback=(
+                        update_service_progress
+                    ),
+                )
+            )
+
+        service_elapsed = (
+            time.perf_counter()
+            - service_started
+        )
+
+        print_service_probes(
+            service_probes
         )
 
         console.print(
-            "\n[green][+] DNS validation "
+            "\n[green][+] Service validation "
             "completed.[/green] "
             f"[dim]"
-            f"{len(dns_resolutions)} hosts "
-            f"in {dns_elapsed:.2f}s"
+            f"{len(service_probes)} endpoints "
+            f"in {service_elapsed:.2f}s"
             f"[/dim]"
         )
-
 
     # =========================================================
     # OPTIONAL: REDIRECT RECONNAISSANCE
@@ -430,28 +581,131 @@ def main() -> int:
         print_security_txt_info(
             web_analysis.security_txt
         )
-
     # =========================================================
-    # 12. OPTIONAL OUTPUT: URL CANDIDATES
+    # WORDLIST CANDIDATE GENERATION
+    # =========================================================
+
+    wordlist_requested = (
+        args.wordlist is not None
+        or args.all_modules
+    )
+
+    if wordlist_requested:
+
+        # "" means:
+        # --wordlist was provided without a file.
+        #
+        # None here therefore means use built-in entries.
+        wordlist_file = (
+            args.wordlist
+            if args.wordlist
+            else None
+        )
+
+        try:
+            (
+                wordlist_entries,
+                wordlist_source,
+            ) = load_wordlist(
+                file_path=wordlist_file,
+                limit=args.wordlist_limit,
+            )
+
+        except WordlistLoadError as exc:
+            console.print(
+                "\n[red][!] Wordlist error: "
+                f"{escape(str(exc))}[/red]"
+            )
+            return 2
+
+        try:
+            wordlist_candidates = (
+                build_wordlist_candidates(
+                    base_url=str(
+                        response.url
+                    ),
+                    entries=wordlist_entries,
+                    source=wordlist_source,
+                )
+            )
+
+        except ValueError as exc:
+            console.print(
+                "\n[red][!] Unable to build "
+                "wordlist candidates: "
+                f"{escape(str(exc))}[/red]"
+            )
+            return 2
+
+        console.print(
+            "\n[dim]"
+            f"Wordlist: "
+            f"{len(wordlist_candidates)} "
+            f"candidate(s) loaded from "
+            f"{escape(wordlist_source)}"
+            f"[/dim]"
+        )
+    # =========================================================
+    # OPTIONAL OUTPUT: URL CANDIDATES
     # =========================================================
 
     if args.candidates or args.all_modules:
+        all_url_candidates = (
+        merge_url_candidates(
+                web_analysis.candidates,
+                wordlist_candidates,
+            )
+        )
         print_url_candidates(
-            web_analysis.candidates
+            all_url_candidates
         )
 
     # =========================================================
-    # 13. OPTIONAL: ACTIVE CONTENT DISCOVERY
+    # OPTIONAL: ACTIVE CONTENT / WORDLIST DISCOVERY
     # =========================================================
 
-    if args.content is not None or args.all_modules:
+    active_discovery_requested = (
+        args.content is not None
+        or args.wordlist is not None
+        or args.all_modules
+    )
 
-        content_started = time.perf_counter()
-        content_limit = (
-            args.content
-            if args.content is not None
-            else 50
+    if active_discovery_requested:
+
+        passive_candidates = []
+
+        if (
+            args.content is not None
+            or args.all_modules
+        ):
+            passive_limit = (
+                args.content
+                if args.content is not None
+                else 50
+            )
+
+            passive_candidates = (
+                web_analysis.candidates[:20]
+            )
+
+        active_wordlist_candidates = []
+
+        if wordlist_requested:
+            active_wordlist_candidates = (
+                wordlist_candidates
+            )
+
+        active_candidates = (
+        merge_url_candidates(
+                passive_candidates,
+                active_wordlist_candidates,
+            )
         )
+
+        content_started = (
+            time.perf_counter()
+        )
+#Progress
         try:
             with Progress(
                 SpinnerColumn(),
@@ -484,7 +738,9 @@ def main() -> int:
                     base_url=str(response.url),
                     candidates=web_analysis.candidates,
                     timeout=args.timeout,
-                    max_candidates=content_limit,
+                    max_candidates=len(
+                        active_candidates
+                    ),
                     progress_callback=(
                         update_content_progress
                     ),
@@ -493,20 +749,63 @@ def main() -> int:
         except ContentDiscoveryInterrupted as exc:
             content_results = exc.results
             scan_interrupted = True
+        # -------------------------------------------------
+        # Separate results that belong to wordlist paths
+        # -------------------------------------------------
 
+        wordlist_urls = {
+            candidate.url
+            for candidate in wordlist_candidates
+        }
+
+        wordlist_results = [
+            result
+            for result in content_results
+            if result.url in wordlist_urls
+        ]
+#--
         content_elapsed = (
             time.perf_counter()
             - content_started
         )
 
-        if content_results:
-            print_content_results(
-                content_results
+        wordlist_only = (
+            args.wordlist is not None
+            and args.content is None
+            and not args.all_modules
+        )
+
+        if wordlist_only:
+
+            interesting_results = (
+                filter_interesting_wordlist_results(
+                    wordlist_results
+                )
             )
 
+            if interesting_results:
+                print_content_results(
+                    interesting_results,
+                    title="Wordlist Discovery",
+                )
+
+            else:
+                console.print(
+                    "\n[dim]"
+                    "No interesting wordlist "
+                    "responses discovered."
+                    "[/dim]"
+                )
+
+        else:
+
+            if content_results:
+                print_content_results(
+                    content_results
+                )
         if scan_interrupted:
             console.print(
-                "\n[yellow][!] Content discovery "
+                "\n[yellow][!] Active discovery "
                 "cancelled by user.[/yellow]"
             )
 
@@ -520,7 +819,7 @@ def main() -> int:
 
         else:
             console.print(
-                "\n[green][+] Content discovery "
+                "\n[green][+] Active discovery "
                 "completed.[/green] "
                 f"[dim]"
                 f"{len(content_results)} probes "
@@ -547,9 +846,14 @@ def main() -> int:
             web_resources=web_resources,
             web_analysis=web_analysis,
             content_results=content_results,
+
+            wordlist_candidates=wordlist_candidates,
+            wordlist_results=wordlist_results,
+
             tls_result=tls_result,
             hostname_candidates=hostname_candidates,
             dns_resolutions=dns_resolutions,
+            service_probes=service_probes,
             findings=findings,
             score=score,
             grade=grade,

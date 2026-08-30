@@ -13,7 +13,20 @@ def positive_int(value: str) -> int:
         )
 
     return number
+def wordlist_limit_int(
+    value: str,
+) -> int:
+    number = positive_int(
+        value
+    )
 
+    if number > 500:
+        raise argparse.ArgumentTypeError(
+            "wordlist limit must not "
+            "exceed 500"
+        )
+
+    return number
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -28,7 +41,11 @@ def parse_args():
             "  reconngan example.com --cookies\n"
             "  reconngan example.com --sitemap\n"
             "  reconngan example.com --tls\n"
+            "  reconngan example.com --resolve-hosts\n"
+            "  reconngan example.com --services\n"        
             "  reconngan example.com --content\n"
+            "  reconngan example.com --wordlist\n"
+            "  reconngan example.com --wordlist paths.txt\n"
             "  reconngan example.com --all"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -45,7 +62,7 @@ def parse_args():
     parser.add_argument(
         "--version",
         action="version",
-        version="ReConngan 0.1.2",
+        version="ReConngan 0.1.6",
     )
 
     # =========================================================
@@ -108,6 +125,20 @@ def parse_args():
             "(default: 50)"
         ),
     )
+    recon_group.add_argument(
+        "--services",
+        nargs="?",
+        const=25,
+        default=None,
+        type=positive_int,
+        metavar="N",
+        help=(
+            "Probe HTTPS/443 and HTTP/80 "
+            "on DNS-resolved hostname candidates, "
+            "optionally at most N hosts "
+            "(default: 25)"
+        ),
+    )
 
     recon_group.add_argument(
         "--resources",
@@ -146,6 +177,31 @@ def parse_args():
             "(default: 50)"
         ),
     )
+
+    recon_group.add_argument(
+        "--wordlist",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Perform active wordlist discovery. "
+            "Optionally load paths from FILE; "
+            "without FILE use the built-in wordlist"
+        ),
+    )
+
+    recon_group.add_argument(
+        "--wordlist-limit",
+        type=wordlist_limit_int,
+        default=100,
+        metavar="N",
+        help=(
+            "Maximum wordlist candidates to probe "
+            "(default: 100, maximum: 500)"
+        ),
+    )
+    
     recon_group.add_argument(
         "--all",
         dest="all_modules",

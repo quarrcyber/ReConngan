@@ -17,6 +17,12 @@ from .models import (
     SitemapInfo,
     SecurityTxtInfo,
     URLCandidate,
+
+    ContentProbe,
+    HostnameCandidate,
+    DNSResolution,
+    HostServiceProbe,
+
     WebResourceAnalysis,
     TLSResult,
 )
@@ -25,6 +31,7 @@ from .models import (
     HostnameCandidate,
     TLSResult,
     DNSResolution,
+    HostServiceProbe,
 )
 console = Console()
 
@@ -289,8 +296,13 @@ def build_report_data(
     web_analysis: WebResourceAnalysis,    
     security_txt: SecurityTxtInfo | None,    
     content_results: list[ContentProbe],    
+
+    wordlist_candidates: list[URLCandidate],
+    wordlist_results: list[ContentProbe],
+
     tls_result: TLSResult | None,
     hostname_candidates: list[HostnameCandidate],    
+    service_probes: list[HostServiceProbe],
     score: float,
     grade: str,
 ) -> dict:
@@ -360,12 +372,30 @@ def build_report_data(
                 in web_analysis.candidates
             ],
         },
+        "dns_validation": [
+            asdict(result)
+            for result in dns_resolutions
+        ],
+        "service_validation": [
+            asdict(result)
+            for result in service_probes
+        ],
         "content_discovery": [
             asdict(result)
             for result in content_results
         ],
 
+        "wordlist_discovery": {
+            "candidates": [
+                asdict(candidate)
+                for candidate in wordlist_candidates
+            ],
 
+            "results": [
+                asdict(result)
+                for result in wordlist_results
+            ],
+        },
 
 
 
@@ -697,7 +727,117 @@ def print_dns_resolutions(
         f"[/dim]"
     )
 
+def print_service_probes(
+    results: list[HostServiceProbe],
+) -> None:
 
+    if not results:
+        console.print(
+            "\n[dim]"
+            "No DNS-resolved hostname candidates "
+            "available for service validation."
+            "[/dim]"
+        )
+        return
+
+    table = Table(
+        title="Host Service Validation",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Hostname",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Service",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Reachable",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Redirect",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Final URL / Error",
+        overflow="fold",
+    )
+
+    for result in results:
+
+        service = (
+            f"{result.scheme.upper()}:"
+            f"{result.port}"
+        )
+
+        reachable = (
+            "[green]YES[/green]"
+            if result.reachable
+            else "[yellow]NO[/yellow]"
+        )
+
+        if result.status_code is not None:
+            status_color = http_status_style(
+                result.status_code
+            )
+
+            status = (
+                f"[{status_color}]"
+                f"{result.status_code}"
+                f"[/{status_color}]"
+            )
+        else:
+            status = "-"
+
+        redirected = (
+            "[cyan]YES[/cyan]"
+            if result.redirected
+            else "NO"
+        )
+
+        detail = (
+            result.final_url
+            or result.error
+            or "-"
+        )
+
+        table.add_row(
+            escape(result.hostname),
+            service,
+            reachable,
+            status,
+            redirected,
+            escape(detail),
+        )
+
+    console.print()
+    console.print(table)
+
+    reachable_count = sum(
+        1
+        for result in results
+        if result.reachable
+    )
+
+    console.print(
+        f"[dim]"
+        f"{reachable_count}/{len(results)} "
+        f"service endpoints reachable"
+        f"[/dim]"
+    )
 
 
 def print_http_cookies(
@@ -1095,14 +1235,15 @@ def print_url_candidates(
             f"[/dim]"
         )
 def print_content_results(
-    results: list[ContentProbe]
+    results: list[ContentProbe],
+    title: str = "Content Discovery",
 ) -> None:
 
     if not results:
         return
 
     table = Table(
-        title="Content Discovery",
+        title=title,
         show_header=True,
         header_style="bold",
     )
