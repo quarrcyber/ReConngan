@@ -4,10 +4,46 @@
     "status_code": 200,
     "http": {
         "http_version": "HTTP/1.1",
-        "response_time_ms": 424.707,
+        "response_time_ms": 522.984,
         "content_type": "text/html; charset=utf-8",
         "content_length": "Not provided"
     },
+    "tls": {
+        "host": "github.com",
+        "port": 443,
+        "version": "TLSv1.3",
+        "cipher": "TLS_AES_128_GCM_SHA256",
+        "cipher_bits": 128,
+        "alpn": "h2",
+        "subject": "CN=github.com",
+        "issuer": "CN=Sectigo Public Server Authentication CA DV E36,O=Sectigo Limited,C=GB",
+        "serial_number": "72010E03F4A067FE4E796266430718F6",
+        "sha256_fingerprint": "17:F8:FD:2E:3F:D2:C1:13:FC:B9:77:2D:8A:4B:AB:B8:52:2D:D0:6D:D0:79:49:15:A4:FF:98:B1:B6:86:3A:00",
+        "valid_from": "2026-07-03T00:00:00+00:00",
+        "valid_until": "2026-09-30T23:59:59+00:00",
+        "days_remaining": 30,
+        "dns_names": [
+            "github.com",
+            "www.github.com"
+        ],
+        "ip_addresses": [],
+        "hostname_match": true,
+        "warnings": [
+            "Certificate expires in 30 days"
+        ]
+    },
+    "hostname_candidates": [
+        {
+            "hostname": "github.com",
+            "source": "target",
+            "certificate_fingerprint": ""
+        },
+        {
+            "hostname": "www.github.com",
+            "source": "tls:san",
+            "certificate_fingerprint": "17:F8:FD:2E:3F:D2:C1:13:FC:B9:77:2D:8A:4B:AB:B8:52:2D:D0:6D:D0:79:49:15:A4:FF:98:B1:B6:86:3A:00"
+        }
+    ],
     "score": 90.0,
     "grade": "A",
     "findings": [
@@ -66,31 +102,143 @@
             "evidence": "Content-Security-Policy: default-src 'none'; base-uri 'self'; child-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/; connect-src 'self' uploads.github.com www.githubstatus.com collector.github.com raw.githubusercontent.com api.github.com github-cloud.s3.amazonaws.com github-production-repository-file-5c1aeb.s3.amazonaws.com github-production-upload-manifest-file-7fdce7.s3.amazonaws.com github-production-user-asset-6210df.s3.amazonaws.com *.rel.tunnels.api.visualstudio.com wss://*.rel.tunnels.api.visualstudio.com github.githubassets.com objects-origin.githubusercontent.com copilot-proxy.githubusercontent.com proxy.individual.githubcopilot.com proxy.business.githubcopilot.com proxy.enterprise.githubcopilot.com *.actions.githubusercontent.com wss://*.actions.githubusercontent.com productionresultssa0.blob.core.windows.net productionresultssa1.blob.core.windows.net productionresultssa2.blob.core.windows.net productionresultssa3.blob.core.windows.net productionresultssa4.blob.core.windows.net productionresultssa5.blob.core.windows.net productionresultssa6.blob.core.windows.net productionresultssa7.blob.core.windows.net productionresultssa8.blob.core.windows.net productionresultssa9.blob.core.windows.net productionresultssa10.blob.core.windows.net productionresultssa11.blob.core.windows.net productionresultssa12.blob.core.windows.net productionresultssa13.blob.core.windows.net productionresultssa14.blob.core.windows.net productionresultssa15.blob.core.windows.net productionresultssa16.blob.core.windows.net productionresultssa17.blob.core.windows.net productionresultssa18.blob.core.windows.net productionresultssa19.blob.core.windows.net github-production-repository-image-32fea6.s3.amazonaws.com github-production-release-asset-2e65be.s3.amazonaws.com insights.github.com wss://alive.github.com wss://alive-staging.github.com api.githubcopilot.com api.individual.githubcopilot.com api.business.githubcopilot.com api.enterprise.githubcopilot.com wss://production-copilot-host.webpubsub.azure.com edge.fullstory.com rs.fullstory.com; font-src github.githubassets.com; form-action 'self' github.com gist.github.com copilot-workspace.githubnext.com objects-origin.githubusercontent.com; frame-ancestors 'none'; frame-src viewscreen.githubusercontent.com notebooks.githubusercontent.com www.youtube-nocookie.com; img-src 'self' data: blob: github.githubassets.com media.githubusercontent.com camo.githubusercontent.com identicons.github.com avatars.githubusercontent.com private-avatars.githubusercontent.com github-cloud.s3.amazonaws.com objects.githubusercontent.com release-assets.githubusercontent.com secured-user-images.githubusercontent.com user-images.githubusercontent.com private-user-images.githubusercontent.com opengraph.githubassets.com repository-images.githubusercontent.com marketplace-screenshots.githubusercontent.com copilotprodattachments.blob.core.windows.net/github-production-copilot-attachments/ github-production-user-asset-6210df.s3.amazonaws.com customer-stories-feed.github.com spotlights-feed.github.com explore-feed.github.com objects-origin.githubusercontent.com *.githubusercontent.com images.ctfassets.net/8aevphvgewt8/; manifest-src 'self'; media-src github.com user-images.githubusercontent.com secured-user-images.githubusercontent.com private-user-images.githubusercontent.com github-production-user-asset-6210df.s3.amazonaws.com gist.github.com github.githubassets.com assets.ctfassets.net/8aevphvgewt8/ videos.ctfassets.net/8aevphvgewt8/; script-src github.githubassets.com; style-src 'unsafe-inline' github.githubassets.com; upgrade-insecure-requests; worker-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/"
         }
     ],
-    "cookies": [
+    "cookies": [],
+    "cookie_findings": [],
+    "web_resources": [],
+    "web_discovery": {
+        "robots": null,
+        "sitemap": null,
+        "security_txt": null,
+        "candidates": []
+    },
+    "dns_records": [
         {
-            "name": "_gh_sess",
-            "secure": true,
-            "httponly": true,
-            "samesite": "Lax",
-            "path": "/",
-            "domain": null
+            "hostname": "github.com",
+            "record_type": "A",
+            "values": [
+                "20.205.243.166"
+            ],
+            "error": null
         },
         {
-            "name": "_octo",
-            "secure": true,
-            "httponly": false,
-            "samesite": "Lax",
-            "path": "/",
-            "domain": ".github.com"
+            "hostname": "github.com",
+            "record_type": "AAAA",
+            "values": [],
+            "error": "NOANSWER"
         },
         {
-            "name": "logged_in",
-            "secure": true,
-            "httponly": true,
-            "samesite": "Lax",
-            "path": "/",
-            "domain": ".github.com"
+            "hostname": "github.com",
+            "record_type": "CNAME",
+            "values": [],
+            "error": "NOANSWER"
+        },
+        {
+            "hostname": "github.com",
+            "record_type": "MX",
+            "values": [
+                "0 github-com.mail.protection.outlook.com."
+            ],
+            "error": null
+        },
+        {
+            "hostname": "github.com",
+            "record_type": "NS",
+            "values": [
+                "dns1.p08.nsone.net.",
+                "dns2.p08.nsone.net.",
+                "dns3.p08.nsone.net.",
+                "dns4.p08.nsone.net.",
+                "ns-1283.awsdns-32.org.",
+                "ns-1707.awsdns-21.co.uk.",
+                "ns-421.awsdns-52.com.",
+                "ns-520.awsdns-01.net."
+            ],
+            "error": null
+        },
+        {
+            "hostname": "github.com",
+            "record_type": "TXT",
+            "values": [],
+            "error": "TXT lookup timed out"
         }
     ],
-    "cookie_findings": []
+    "dns_validation": [
+        {
+            "hostname": "github.com",
+            "source": "target",
+            "canonical_name": null,
+            "ipv4_addresses": [
+                "20.205.243.166"
+            ],
+            "ipv6_addresses": [],
+            "resolved": true,
+            "errors": []
+        },
+        {
+            "hostname": "www.github.com",
+            "source": "tls:san",
+            "canonical_name": "github.com",
+            "ipv4_addresses": [
+                "20.205.243.166"
+            ],
+            "ipv6_addresses": [],
+            "resolved": true,
+            "errors": []
+        }
+    ],
+    "service_validation": [
+        {
+            "hostname": "github.com",
+            "source": "target",
+            "scheme": "https",
+            "port": 443,
+            "url": "https://github.com:443/",
+            "reachable": true,
+            "status_code": 200,
+            "final_url": "https://github.com/",
+            "redirected": false,
+            "error": null
+        },
+        {
+            "hostname": "github.com",
+            "source": "target",
+            "scheme": "http",
+            "port": 80,
+            "url": "http://github.com:80/",
+            "reachable": true,
+            "status_code": 200,
+            "final_url": "https://github.com/",
+            "redirected": true,
+            "error": null
+        },
+        {
+            "hostname": "www.github.com",
+            "source": "tls:san",
+            "scheme": "https",
+            "port": 443,
+            "url": "https://www.github.com:443/",
+            "reachable": true,
+            "status_code": 200,
+            "final_url": "https://github.com/",
+            "redirected": true,
+            "error": null
+        },
+        {
+            "hostname": "www.github.com",
+            "source": "tls:san",
+            "scheme": "http",
+            "port": 80,
+            "url": "http://www.github.com:80/",
+            "reachable": true,
+            "status_code": 200,
+            "final_url": "https://github.com/",
+            "redirected": true,
+            "error": null
+        }
+    ],
+    "content_discovery": [],
+    "wordlist_discovery": {
+        "candidates": [],
+        "results": []
+    }
 }

@@ -304,6 +304,10 @@ def build_report_data(
 
     tls_result: TLSResult | None,
     hostname_candidates: list[HostnameCandidate],    
+
+    dns_records: list[DNSRecord],
+    dns_resolutions: list[DNSResolution],
+
     service_probes: list[HostServiceProbe],
     score: float,
     grade: str,
@@ -374,6 +378,11 @@ def build_report_data(
                 in web_analysis.candidates
             ],
         },
+        "dns_records": [
+            asdict(record)
+            for record in dns_records
+        ],
+
         "dns_validation": [
             asdict(result)
             for result in dns_resolutions

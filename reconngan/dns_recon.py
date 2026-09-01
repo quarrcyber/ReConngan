@@ -1,7 +1,7 @@
 from __future__ import annotations
-
 from collections.abc import Callable
 
+import ipaddress
 import dns.exception
 import dns.resolver
 
@@ -18,6 +18,75 @@ DEFAULT_DNS_RECORD_TYPES: tuple[str, ...] = (
     "NS",
     "TXT",
 )
+
+
+def build_target_hostname_candidate(
+    hostname: str | None,
+) -> HostnameCandidate | None:
+    """Build a hostname candidate from the original scan target."""
+
+    if hostname is None:
+        return None
+
+    normalized_hostname = (
+        hostname
+        .strip()
+        .rstrip(".")
+        .lower()
+    )
+
+    if not normalized_hostname:
+        return None
+
+    try:
+        ipaddress.ip_address(
+            normalized_hostname
+        )
+    except ValueError:
+        pass
+    else:
+        return None
+
+    return HostnameCandidate(
+        hostname=normalized_hostname,
+        source="target",
+        certificate_fingerprint="",
+    )
+def merge_hostname_candidates(
+    *groups: list[HostnameCandidate],
+) -> list[HostnameCandidate]:
+    """Merge hostname candidates while preserving first source."""
+
+    merged: list[HostnameCandidate] = []
+    seen: set[str] = set()
+
+    for group in groups:
+        for candidate in group:
+            hostname = (
+                candidate.hostname
+                .rstrip(".")
+                .lower()
+            )
+
+            if hostname in seen:
+                continue
+
+            seen.add(
+                hostname
+            )
+
+            merged.append(
+                HostnameCandidate(
+                    hostname=hostname,
+                    source=candidate.source,
+                    certificate_fingerprint=(
+                        candidate.certificate_fingerprint
+                    ),
+                )
+            )
+
+    return merged
+#records
 def _resolve_record_type(
     resolver: dns.resolver.Resolver,
     hostname: str,

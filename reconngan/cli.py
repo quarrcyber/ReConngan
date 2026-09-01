@@ -88,6 +88,26 @@ def positive_int(value: str) -> int:
         )
 
     return number
+
+def positive_float(
+    value: str,
+) -> float:
+    try:
+        number = float(
+            value
+        )
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be a number"
+        ) from exc
+
+    if number <= 0:
+        raise argparse.ArgumentTypeError(
+            "must be greater than 0"
+        )
+
+    return number
+
 def wordlist_limit_int(
     value: str,
 ) -> int:
@@ -102,6 +122,64 @@ def wordlist_limit_int(
         )
 
     return number
+
+def extension_list(
+    value: str,
+) -> tuple[str, ...]:
+    extensions: list[str] = []
+    seen: set[str] = set()
+
+    for raw_extension in value.split(","):
+        extension = (
+            raw_extension
+            .strip()
+            .lower()
+            .lstrip(".")
+        )
+
+        if not extension:
+            continue
+
+        if any(
+            character in extension
+            for character in (
+                "/",
+                "\\",
+                "?",
+                "#",
+                ":",
+                "*",
+                " ",
+            )
+        ):
+            raise argparse.ArgumentTypeError(
+                f"invalid extension: {raw_extension!r}"
+            )
+
+        if extension in seen:
+            continue
+
+        seen.add(
+            extension
+        )
+
+        extensions.append(
+            extension
+        )
+
+    if not extensions:
+        raise argparse.ArgumentTypeError(
+            "at least one extension is required"
+        )
+
+    if len(extensions) > 20:
+        raise argparse.ArgumentTypeError(
+            "extensions must not exceed 20 values"
+        )
+
+    return tuple(
+        extensions
+    )
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -168,6 +246,18 @@ def parse_args():
         help=(
             "Concurrent requests for active path discovery "
             "(default: 40)"
+        ),
+    )
+
+    network_group.add_argument(
+        "--rate",
+        type=positive_float,
+        default=None,
+        metavar="RPS",
+        help=(
+            "Maximum active path discovery request rate "
+            "in requests per second "
+            "(default: unlimited)"
         ),
     )
 
@@ -337,6 +427,21 @@ def parse_args():
     )
 
     recon_group.add_argument(
+        "-x",
+        "--extensions",
+        type=extension_list,
+        default=(),
+        metavar="EXTS",
+        help=(
+            "Expand extensionless wordlist paths with "
+            "comma-separated extensions, for example "
+            "php,html,json,txt. Requires --discover-paths."
+        ),
+    )
+
+
+
+    recon_group.add_argument(
         "--wordlist-limit",
         dest="wordlist_limit",
         type=wordlist_limit_int,
@@ -380,6 +485,7 @@ def parse_args():
 
     output_group.add_argument(
         "--minimum-grade",
+        dest="fail_under",
         type=str.upper,
         choices=[
             "A",
@@ -395,5 +501,11 @@ def parse_args():
         ),
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
 
+    if args.extensions and args.wordlist is None:
+        parser.error(
+            "--extensions requires --discover-paths FILE"
+        )
+
+    return args

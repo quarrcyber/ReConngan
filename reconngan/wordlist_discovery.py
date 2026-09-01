@@ -5,7 +5,8 @@ import hashlib
 import secrets
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
 from pathlib import Path
 from urllib.parse import (
     urljoin,
@@ -109,6 +110,7 @@ class PathDiscoveryInterrupted(KeyboardInterrupt):
 class PathDiscoveryConfig:
     timeout: float = 10.0
     concurrency: int = 40
+    rate_limit: float | None = None
     max_response_bytes: int = 16_384
     baseline_samples: int = 3
     found_statuses: frozenset[int] = FOUND_STATUS_CODES
@@ -131,6 +133,70 @@ class Soft404Baseline:
     redirect_to: str | None
     normalized_body: str
     body_hash: str
+
+@dataclass
+class AsyncRateLimiter:
+    """Coordinate request pacing across concurrent workers."""
+
+    requests_per_second: float | None
+    _lock: asyncio.Lock = field(
+        init=False,
+        repr=False,
+    )
+    _next_allowed_at: float = field(
+        default=0.0,
+        init=False,
+        repr=False,
+    )
+
+    def __post_init__(
+        self,
+    ) -> None:
+        self._lock = asyncio.Lock()
+
+        if (
+            self.requests_per_second is not None
+            and self.requests_per_second <= 0
+        ):
+            raise ValueError(
+                "requests_per_second must be greater than 0"
+            )
+
+    async def wait(
+        self,
+    ) -> None:
+        if self.requests_per_second is None:
+            return
+
+        interval = (
+            1.0
+            / self.requests_per_second
+        )
+
+        loop = asyncio.get_running_loop()
+
+        async with self._lock:
+            now = loop.time()
+
+            allowed_at = max(
+                now,
+                self._next_allowed_at,
+            )
+
+            self._next_allowed_at = (
+                allowed_at
+                + interval
+            )
+
+            delay = (
+                allowed_at
+                - now
+            )
+
+        if delay > 0:
+            await asyncio.sleep(
+                delay
+            )
 
 
 def _normalize_wordlist_entry(
@@ -268,6 +334,123 @@ def load_wordlist(
         source,
     )
 
+def _path_has_extension(
+    path: str,
+) -> bool:
+    parsed = urlsplit(
+        path
+    )
+
+    final_segment = (
+        parsed.path
+        .rstrip("/")
+        .rsplit(
+            "/",
+            maxsplit=1,
+        )[-1]
+    )
+
+    if not final_segment:
+        return False
+
+    if final_segment.startswith(
+        "."
+    ):
+        return True
+
+    return "." in final_segment
+
+def _path_is_extension_candidate(
+    path: str,
+) -> bool:
+    parsed = urlsplit(
+        path
+    )
+
+    if parsed.query:
+        return False
+
+    if parsed.path.endswith(
+        "/"
+    ):
+        return False
+
+    if _path_has_extension(
+        path
+    ):
+        return False
+
+    final_segment = (
+        parsed.path
+        .rsplit(
+            "/",
+            maxsplit=1,
+        )[-1]
+    )
+
+    if not final_segment:
+        return False
+
+    return True
+
+def expand_wordlist_entries(
+    entries: list[str],
+    extensions: tuple[str, ...],
+) -> list[str]:
+    """Expand extensionless wordlist paths with file extensions."""
+
+    if not extensions:
+        return entries
+
+    expanded_entries: list[str] = []
+    seen: set[str] = set()
+
+    for entry in entries:
+        if entry not in seen:
+            seen.add(
+                entry
+            )
+
+            expanded_entries.append(
+                entry
+            )
+
+        if not _path_is_extension_candidate(
+            entry
+        ):
+            continue
+
+        parsed = urlsplit(
+            entry
+        )
+
+        for extension in extensions:
+            expanded_path = (
+                f"{parsed.path}.{extension}"
+            )
+
+            expanded_entry = urlunsplit(
+                (
+                    "",
+                    "",
+                    expanded_path,
+                    "",
+                    "",
+                )
+            )
+
+            if expanded_entry in seen:
+                continue
+
+            seen.add(
+                expanded_entry
+            )
+
+            expanded_entries.append(
+                expanded_entry
+            )
+
+    return expanded_entries
 
 def _origin_url(
     base_url: str,
@@ -482,6 +665,7 @@ async def _build_soft404_baselines(
     client: httpx.AsyncClient,
     base_url: str,
     config: PathDiscoveryConfig,
+    rate_limiter: AsyncRateLimiter,
 ) -> list[Soft404Baseline]:
     origin = _origin_url(
         base_url
@@ -504,6 +688,7 @@ async def _build_soft404_baselines(
             origin,
             random_path,
         )
+        await rate_limiter.wait()
 
         sample = await _request_sample(
             client=client,
@@ -582,6 +767,7 @@ async def _probe_path(
     candidate: URLCandidate,
     baselines: list[Soft404Baseline],
     config: PathDiscoveryConfig,
+    rate_limiter: AsyncRateLimiter,
 ) -> ContentProbe | None:
     try:
         sample = await _request_sample(
@@ -627,6 +813,7 @@ async def discover_wordlist_paths_async(
     candidates: list[URLCandidate],
     timeout: float = 10.0,
     concurrency: int = 40,
+    rate_limit: float | None = None,
     max_response_bytes: int = 16_384,
     progress_callback: ProgressCallback | None = None,
 ) -> list[ContentProbe]:
@@ -651,10 +838,14 @@ async def discover_wordlist_paths_async(
             1,
             concurrency,
         ),
+        rate_limit=rate_limit,
         max_response_bytes=max(
             MIN_RESPONSE_BYTES,
             max_response_bytes,
         ),
+    )
+    rate_limiter = AsyncRateLimiter(
+        config.rate_limit
     )
 
     results: list[ContentProbe] = []
@@ -689,6 +880,7 @@ async def discover_wordlist_paths_async(
                     client=client,
                     base_url=base_url,
                     config=config,
+                    rate_limiter=rate_limiter,
                 )
             )
 
@@ -716,6 +908,7 @@ async def discover_wordlist_paths_async(
                         candidate=candidate,
                         baselines=baselines,
                         config=config,
+                        rate_limiter=rate_limiter,
                     )
 
                     if result is not None:
@@ -775,6 +968,7 @@ def discover_wordlist_paths(
     candidates: list[URLCandidate],
     timeout: float = 10.0,
     concurrency: int = 40,
+    rate_limit: float | None = None,
     max_response_bytes: int = 16_384,
     progress_callback: ProgressCallback | None = None,
 ) -> list[ContentProbe]:
@@ -787,6 +981,7 @@ def discover_wordlist_paths(
                 candidates=candidates,
                 timeout=timeout,
                 concurrency=concurrency,
+                rate_limit=rate_limit,
                 max_response_bytes=max_response_bytes,
                 progress_callback=progress_callback,
             )

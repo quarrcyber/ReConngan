@@ -1,0 +1,6 @@
+admin
+login
+robots.txt
+.env
+docs/
+api/v1
