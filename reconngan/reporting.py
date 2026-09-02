@@ -521,6 +521,39 @@ def print_tls_info(
     )
 
     table.add_row(
+        "Trust Valid",
+        (
+            "[green]YES[/green]"
+            if result.trust_valid
+            else "[red]NO[/red]"
+        ),
+    )
+
+    if result.trust_error:
+        table.add_row(
+            "Trust Error",
+            escape(result.trust_error),
+        )
+
+    table.add_row(
+        "Supported TLS",
+        (
+            ", ".join(result.supported_versions)
+            if result.supported_versions
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Weak Protocols",
+        (
+            ", ".join(result.weak_protocols)
+            if result.weak_protocols
+            else "-"
+        ),
+    )
+
+    table.add_row(
         "Subject",
         escape(result.subject),
     )
@@ -594,6 +627,32 @@ def print_tls_info(
             console.print(
                 f"  {result.sha256_fingerprint}"
             )
+
+    if result.security_findings:
+        findings_table = Table(
+            title="TLS Security Findings",
+            show_header=True,
+            header_style="bold",
+        )
+
+        findings_table.add_column("Check")
+        findings_table.add_column("Status")
+        findings_table.add_column("Severity")
+        findings_table.add_column(
+            "Evidence",
+            overflow="fold",
+        )
+
+        for finding in result.security_findings:
+            findings_table.add_row(
+                finding.check,
+                finding.status,
+                finding.severity,
+                escape(finding.evidence),
+            )
+
+        console.print(findings_table)
+
     if result.warnings:
         console.print(
             "\n[bold yellow]TLS Findings[/bold yellow]"

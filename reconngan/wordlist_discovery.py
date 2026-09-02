@@ -1066,6 +1066,12 @@ async def _probe_path(
     ):
         return None
 
+    if not _response_size_allowed(
+        sample,
+        config,
+    ):
+        return None
+
     if _looks_like_soft404(
         sample,
         baselines,
@@ -1124,23 +1130,18 @@ async def _probe_candidate_batch(
                 if candidate is None:
                     return
 
+                result: ContentProbe | None = None
+
                 try:
-                   result = await _probe_path(
-                       client=client,
-                       candidate=candidate,
-                       baselines=baselines,
-                       config=config,
-                       rate_limiter=rate_limiter,
-                   )
-
-                   if result is not None:
-                       results.append(
-                           result
-                       )
-
+                    result = await _probe_path(
+                        client=client,
+                        candidate=candidate,
+                        baselines=baselines,
+                        config=config,
+                        rate_limiter=rate_limiter,
+                    )
                 except asyncio.TimeoutError:
                     result = None
-                    outcome = "error"
 
                 if result is not None:
                     results.append(
@@ -1148,7 +1149,7 @@ async def _probe_candidate_batch(
                     )
 
                 completed += 1
-#ppp
+
                 if progress_callback:
                     progress_callback(
                         completed,

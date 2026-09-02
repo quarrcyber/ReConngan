@@ -159,6 +159,27 @@ class HostServiceProbe:
     redirected: bool
 
     error: str | None
+
+@dataclass
+class TLSCertificateSummary:
+    subject: str
+    issuer: str
+    serial_number: str
+    sha256_fingerprint: str
+    valid_from: str
+    valid_until: str
+    is_ca: bool | None
+
+
+@dataclass
+class TLSSecurityFinding:
+    check: str
+    status: str
+    severity: str
+    note: str
+    evidence: str
+
+
 @dataclass
 class TLSResult:
     host: str
@@ -183,3 +204,10 @@ class TLSResult:
 
     hostname_match: bool
     warnings: list[str]
+
+    trust_valid: bool
+    trust_error: str | None
+    supported_versions: list[str]
+    weak_protocols: list[str]
+    certificate_chain: list[TLSCertificateSummary]
+    security_findings: list[TLSSecurityFinding]

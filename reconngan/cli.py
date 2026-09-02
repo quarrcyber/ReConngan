@@ -262,7 +262,7 @@ def parse_args():
         "-v",
         "--version",
         action="version",
-        version="ReConngan 0.1.7",
+        version="ReConngan 0.1.8",
     )
 
     # =========================================================
@@ -587,8 +587,6 @@ def parse_args():
             "--depth requires --discover-paths FILE"
         )
 
-    return args
-
     size_filter_requested = (
         args.min_response_size is not None
         or args.max_response_size is not None
@@ -603,8 +601,7 @@ def parse_args():
     if (
         args.min_response_size is not None
         and args.max_response_size is not None
-        and args.min_response_size
-        > args.max_response_size
+        and args.min_response_size > args.max_response_size
     ):
         parser.error(
             "--min-response-size must be less than "

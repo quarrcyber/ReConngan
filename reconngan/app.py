@@ -931,6 +931,12 @@ def main() -> int:
                     max_response_bytes=(
                         args.max_response_bytes
                     ),
+                    min_response_size=(
+                        args.min_response_size
+                    ),
+                    max_response_size=(
+                        args.max_response_size
+                    ),
                     depth_limit=args.depth,
                     progress_callback=(
                         update_path_progress
