@@ -1,6 +1,5 @@
 admin
 login
+api
 robots.txt
-.env
-docs/
-api/v1
+not-real-random-12345

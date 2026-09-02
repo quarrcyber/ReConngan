@@ -27,6 +27,7 @@ from .models import (
     TLSResult,
     DNSRecord,
     DNSResolution,
+    PathDiscoveryStats,
 )
 from .models import (
     ContentProbe,
@@ -301,6 +302,8 @@ def build_report_data(
 
     wordlist_candidates: list[URLCandidate],
     wordlist_results: list[ContentProbe],
+    wordlist_stats: PathDiscoveryStats,
+
 
     tls_result: TLSResult | None,
     hostname_candidates: list[HostnameCandidate],    
@@ -401,11 +404,13 @@ def build_report_data(
                 asdict(candidate)
                 for candidate in wordlist_candidates
             ],
-
             "results": [
                 asdict(result)
                 for result in wordlist_results
             ],
+            "stats": asdict(
+                wordlist_stats
+            ),
         },
 
 
@@ -1413,7 +1418,7 @@ def _path_result_kind(
 
     return "PATH"
 
-
+#discovery results
 def print_path_discovery_results(
     results: list[ContentProbe],
 ) -> None:
@@ -1491,6 +1496,104 @@ def print_path_discovery_results(
                 redirect_to
             ),
         )
+
+    console.print(
+        table
+    )
+
+#discovery stats
+def print_path_discovery_stats(
+    stats: PathDiscoveryStats,
+) -> None:
+    if (
+        stats.planned == 0
+        and stats.tested == 0
+    ):
+        return
+
+    table = Table(
+        title="Path Discovery Telemetry",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Metric",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Value",
+        justify="right",
+    )
+
+    filtered_total = (
+        stats.not_found
+        + stats.ignored_status
+        + stats.soft_404
+        + stats.empty_success
+        + stats.errors
+    )
+
+    table.add_row(
+        "Planned",
+        str(stats.planned),
+    )
+
+    table.add_row(
+        "Tested",
+        str(stats.tested),
+    )
+
+    table.add_row(
+        "Found",
+        str(stats.found),
+    )
+
+    table.add_row(
+        "Filtered",
+        str(filtered_total),
+    )
+
+    table.add_row(
+        "Not found",
+        str(stats.not_found),
+    )
+
+    table.add_row(
+        "Ignored status",
+        str(stats.ignored_status),
+    )
+
+    table.add_row(
+        "Soft 404",
+        str(stats.soft_404),
+    )
+
+    table.add_row(
+        "Empty 200",
+        str(stats.empty_success),
+    )
+
+    table.add_row(
+        "Errors",
+        str(stats.errors),
+    )
+
+    table.add_row(
+        "Redirects",
+        str(stats.redirects),
+    )
+
+    table.add_row(
+        "Protected",
+        str(stats.protected),
+    )
+
+    table.add_row(
+        "Recursive candidates",
+        str(stats.recursive_candidates),
+    )
 
     console.print(
         table

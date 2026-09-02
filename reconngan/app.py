@@ -22,6 +22,7 @@ from .models import (
     HeaderRule,
     Finding,
     WebResourceAnalysis,
+    PathDiscoveryStats,
 )
 from .headers import analyze_headers
 from .scoring import (
@@ -45,6 +46,8 @@ from .reporting import (
     print_url_candidates,
     print_content_results,
     print_path_discovery_results,
+    print_path_discovery_stats,
+
     print_tls_info,
     print_dns_resolutions,
     print_service_probes,
@@ -210,7 +213,7 @@ def main() -> int:
     content_results = []
     wordlist_candidates = []
     wordlist_results = []
-
+    wordlist_stats = PathDiscoveryStats()
 
     tls_result = None
 
@@ -922,7 +925,7 @@ def main() -> int:
                         ),
                     )
 
-                wordlist_results = discover_wordlist_paths(
+                path_discovery = discover_wordlist_paths(
                     base_url=str(response.url),
                     candidates=wordlist_candidates,
                     timeout=args.timeout,
@@ -936,8 +939,13 @@ def main() -> int:
                     ),
                 )
 
+                wordlist_results = path_discovery.probes
+                wordlist_stats = path_discovery.stats
+
+
         except PathDiscoveryInterrupted as exc:
             wordlist_results = exc.results
+            wordlist_stats = exc.stats
             scan_interrupted = True
 
         path_elapsed = (
@@ -956,6 +964,10 @@ def main() -> int:
                 "discovered."
                 "[/dim]"
             )
+        print_path_discovery_stats(
+            wordlist_stats
+        )
+
 
         if scan_interrupted:
             console.print(
@@ -968,14 +980,34 @@ def main() -> int:
                 if args.rate is None
                 else f"{args.rate:g} req/s"
             )
+            size_filter_parts: list[str] = []
+
+            if args.min_response_size is not None:
+                size_filter_parts.append(
+                    f"min {args.min_response_size}"
+                )
+
+            if args.max_response_size is not None:
+                size_filter_parts.append(
+                    f"max {args.max_response_size}"
+                )
+
+            size_filter_text = (
+                ", ".join(size_filter_parts)
+                if size_filter_parts
+                else "none"
+            )
             console.print(
                 "\n[green][+] Subdirectory/path discovery "
                 "completed.[/green] "
                 f"[dim]"
-                f"{len(wordlist_candidates)} tested, "
-                f"{len(wordlist_results)} found, "
+                f"{wordlist_stats.tested}/"
+                f"{wordlist_stats.planned} tested, "
+                f"{wordlist_stats.found} found, "
                 f"concurrency {args.concurrency}, "
-                f"rate {rate_text} "
+                f"depth {args.depth}, "
+                f"rate {rate_text}, "
+                f"size filter {size_filter_text} "
                 f"in {path_elapsed:.2f}s"
                 f"[/dim]"
             )
@@ -1002,6 +1034,7 @@ def main() -> int:
 
             wordlist_candidates=wordlist_candidates,
             wordlist_results=wordlist_results,
+            wordlist_stats=wordlist_stats,
 
             tls_result=tls_result,
             hostname_candidates=hostname_candidates,

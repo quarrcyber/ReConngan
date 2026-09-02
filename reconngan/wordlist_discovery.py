@@ -23,9 +23,11 @@ from .content_discovery import (
 )
 from .models import (
     ContentProbe,
+    PathDiscoveryResult,
+    PathDiscoveryStats,
     URLCandidate,
 )
-
+from typing import Literal
 
 MAX_WORDLIST_ENTRIES = 50_000
 
@@ -52,6 +54,7 @@ REDIRECT_STATUS_CODES = frozenset(
 )
 
 MIN_RESPONSE_BYTES = 1_024
+EMPTY_SUCCESS_MAX_BYTES = 0
 
 DEFAULT_WORDLIST: tuple[str, ...] = (
     "admin",
@@ -87,7 +90,14 @@ ProgressCallback = Callable[
     [int, int, str],
     None,
 ]
-
+PathProbeOutcome = Literal[
+    "found",
+    "not_found",
+    "ignored_status",
+    "soft_404",
+    "empty_success",
+    "error",
+]
 
 class WordlistLoadError(ValueError):
     """Raised when a wordlist cannot be loaded."""
@@ -99,12 +109,19 @@ class PathDiscoveryInterrupted(KeyboardInterrupt):
     def __init__(
         self,
         results: list[ContentProbe],
+        stats: PathDiscoveryStats | None = None,
     ) -> None:
         super().__init__(
             "Path discovery interrupted by user"
         )
-        self.results = list(results)
-
+        self.results = list(
+            results
+        )
+        self.stats = (
+            stats
+            if stats is not None
+            else PathDiscoveryStats()
+        )
 
 @dataclass(frozen=True)
 class PathDiscoveryConfig:
@@ -112,6 +129,9 @@ class PathDiscoveryConfig:
     concurrency: int = 40
     rate_limit: float | None = None
     max_response_bytes: int = 16_384
+    min_response_size: int | None = None
+    max_response_size: int | None = None
+    depth_limit: int = 0
     baseline_samples: int = 3
     found_statuses: frozenset[int] = FOUND_STATUS_CODES
 
@@ -562,6 +582,180 @@ def merge_url_candidates(
 
     return merged
 
+def _candidate_path_suffixes(
+    base_url: str,
+    candidates: list[URLCandidate],
+) -> list[str]:
+    """Extract relative path suffixes from root wordlist candidates."""
+
+    origin = _origin_url(
+        base_url
+    )
+
+    parsed_origin = urlsplit(
+        origin
+    )
+
+    suffixes: list[str] = []
+    seen: set[str] = set()
+
+    for candidate in candidates:
+        parsed_candidate = urlsplit(
+            candidate.url
+        )
+
+        if (
+            parsed_candidate.scheme
+            != parsed_origin.scheme
+            or parsed_candidate.netloc.lower()
+            != parsed_origin.netloc.lower()
+        ):
+            continue
+
+        suffix = parsed_candidate.path.lstrip(
+            "/"
+        )
+
+        if not suffix:
+            continue
+
+        if parsed_candidate.query:
+            suffix = (
+                f"{suffix}?{parsed_candidate.query}"
+            )
+
+        if suffix in seen:
+            continue
+
+        seen.add(
+            suffix
+        )
+
+        suffixes.append(
+            suffix
+        )
+
+    return suffixes
+
+def _result_directory_url(
+    result: ContentProbe,
+    origin: str,
+) -> str | None:
+    """Return a same-origin directory URL suitable for recursion."""
+
+    parsed_origin = urlsplit(
+        origin
+    )
+
+    parsed_result = urlsplit(
+        result.url
+    )
+
+    if (
+        parsed_result.scheme
+        != parsed_origin.scheme
+        or parsed_result.netloc.lower()
+        != parsed_origin.netloc.lower()
+    ):
+        return None
+
+    if parsed_result.path.endswith(
+        "/"
+    ):
+        return urlunsplit(
+            (
+                parsed_result.scheme,
+                parsed_result.netloc,
+                parsed_result.path,
+                "",
+                "",
+            )
+        )
+
+    if (
+        result.status_code in REDIRECT_STATUS_CODES
+        and result.redirect_to
+    ):
+        redirect_url = urljoin(
+            result.url,
+            result.redirect_to,
+        )
+
+        parsed_redirect = urlsplit(
+            redirect_url
+        )
+
+        if (
+            parsed_redirect.scheme
+            == parsed_origin.scheme
+            and parsed_redirect.netloc.lower()
+            == parsed_origin.netloc.lower()
+            and parsed_redirect.path.endswith("/")
+        ):
+            return urlunsplit(
+                (
+                    parsed_redirect.scheme,
+                    parsed_redirect.netloc,
+                    parsed_redirect.path,
+                    "",
+                    "",
+                )
+            )
+
+    return None
+
+def _build_recursive_candidates(
+    directory_urls: list[str],
+    path_suffixes: list[str],
+    source: str,
+    depth: int,
+    seen_urls: set[str],
+) -> list[URLCandidate]:
+    """Build next-level candidates under discovered directories."""
+
+    candidates: list[URLCandidate] = []
+
+    for directory_url in directory_urls:
+        parsed_directory = urlsplit(
+            directory_url
+        )
+
+        for suffix in path_suffixes:
+            child_url = urljoin(
+                directory_url,
+                suffix,
+            )
+
+            parsed_child = urlsplit(
+                child_url
+            )
+
+            if (
+                parsed_child.scheme
+                != parsed_directory.scheme
+                or parsed_child.netloc.lower()
+                != parsed_directory.netloc.lower()
+            ):
+                continue
+
+            if child_url in seen_urls:
+                continue
+
+            seen_urls.add(
+                child_url
+            )
+
+            candidates.append(
+                URLCandidate(
+                    url=child_url,
+                    source=(
+                        f"{source}:depth-{depth}"
+                    ),
+                    same_host=True,
+                )
+            )
+
+    return candidates
 
 def _parse_content_length(
     value: str | None,
@@ -576,6 +770,20 @@ def _parse_content_length(
     except ValueError:
         return None
 
+def _effective_response_size(
+    sample: SampledHTTPResponse,
+) -> int:
+    """Return the best available response size for filtering."""
+
+    if sample.content_length is not None:
+        return sample.content_length
+
+    return len(
+        sample.body_text.encode(
+            "utf-8",
+            errors="ignore",
+        )
+    )
 
 def _hash_bytes(
     data: bytes,
@@ -660,6 +868,26 @@ async def _request_sample(
             ),
         )
 
+async def _request_sample_with_deadline(
+    client: httpx.AsyncClient,
+    url: str,
+    config: PathDiscoveryConfig,
+) -> SampledHTTPResponse:
+    """Request a sampled response with a hard asyncio deadline."""
+
+    return await asyncio.wait_for(
+        _request_sample(
+            client=client,
+            url=url,
+            max_response_bytes=(
+                config.max_response_bytes
+            ),
+        ),
+        timeout=(
+            config.timeout
+            + 1.0
+        ),
+    )
 
 async def _build_soft404_baselines(
     client: httpx.AsyncClient,
@@ -688,15 +916,20 @@ async def _build_soft404_baselines(
             origin,
             random_path,
         )
-        await rate_limiter.wait()
+        try:
+            await rate_limiter.wait()
 
-        sample = await _request_sample(
-            client=client,
-            url=url,
-            max_response_bytes=(
-                config.max_response_bytes
-            ),
-        )
+            sample = await _request_sample_with_deadline(
+                client=client,
+                url=url,
+                config=config,
+            )
+
+        except (
+            httpx.RequestError,
+            asyncio.TimeoutError,
+        ):
+            continue
 
         baselines.append(
             Soft404Baseline(
@@ -761,6 +994,103 @@ def _looks_like_soft404(
 
     return False
 
+def _response_size_allowed(
+    sample: SampledHTTPResponse,
+    config: PathDiscoveryConfig,
+) -> bool:
+    """Return whether response size passes configured filters."""
+
+    size = sample.content_length
+
+    if size is None:
+        return True
+
+    if (
+        config.min_response_size is not None
+        and size < config.min_response_size
+    ):
+        return False
+
+    if (
+        config.max_response_size is not None
+        and size > config.max_response_size
+    ):
+        return False
+
+    return True
+
+def _is_empty_success_noise(
+    sample: SampledHTTPResponse,
+) -> bool:
+    """Return whether a successful response is likely empty noise."""
+
+    if sample.status_code != 200:
+        return False
+
+    if sample.redirect_to:
+        return False
+
+    size = _effective_response_size(
+        sample
+    )
+
+    if size > EMPTY_SUCCESS_MAX_BYTES:
+        return False
+
+    normalized_body = normalize_body(
+        sample.body_text
+    )
+
+    return not normalized_body
+
+def _update_discovery_stats(
+    stats: PathDiscoveryStats,
+    outcome: PathProbeOutcome,
+    result: ContentProbe | None,
+) -> None:
+    """Update path discovery telemetry for one probed candidate."""
+
+    stats.tested += 1
+
+    if outcome == "found":
+        stats.found += 1
+
+        if result is None:
+            return
+
+        if (
+            result.status_code
+            in REDIRECT_STATUS_CODES
+        ):
+            stats.redirects += 1
+
+        if result.status_code in {
+            401,
+            403,
+        }:
+            stats.protected += 1
+
+        return
+
+    if outcome == "not_found":
+        stats.not_found += 1
+        return
+
+    if outcome == "ignored_status":
+        stats.ignored_status += 1
+        return
+
+    if outcome == "soft_404":
+        stats.soft_404 += 1
+        return
+
+    if outcome == "empty_success":
+        stats.empty_success += 1
+        return
+
+    if outcome == "error":
+        stats.errors += 1
+        return
 
 async def _probe_path(
     client: httpx.AsyncClient,
@@ -768,45 +1098,186 @@ async def _probe_path(
     baselines: list[Soft404Baseline],
     config: PathDiscoveryConfig,
     rate_limiter: AsyncRateLimiter,
-) -> ContentProbe | None:
+) -> tuple[ContentProbe | None, PathProbeOutcome]:
     try:
-        sample = await _request_sample(
+        await rate_limiter.wait()
+
+        sample = await _request_sample_with_deadline(
             client=client,
             url=candidate.url,
-            max_response_bytes=(
-                config.max_response_bytes
-            ),
+            config=config,
         )
 
-    except httpx.RequestError:
-        return None
+    except (
+        httpx.RequestError,
+        asyncio.TimeoutError,
+    ):
+        return (
+            None,
+            "error",
+        )
+
+
 
     if (
         sample.status_code
         not in config.found_statuses
     ):
+        if sample.status_code == 404:
+            return (
+                None,
+                "not_found",
+            )
+
+        return (
+            None,
+            "ignored_status",
+        )
+
+    if not _response_size_allowed(
+        sample,
+        config,
+    ):
         return None
+
+    if _is_empty_success_noise(
+        sample
+    ):
+        return (
+            None,
+            "empty_success",
+        )
 
     if _looks_like_soft404(
         sample,
         baselines,
     ):
-        return None
+        return (
+            None,
+            "soft_404",
+        )
 
-    return ContentProbe(
-        url=candidate.url,
-        source=candidate.source,
-        status_code=sample.status_code,
-        classification=classify_status(
-            sample.status_code
+    return (
+        ContentProbe(
+            url=candidate.url,
+            source=candidate.source,
+            status_code=sample.status_code,
+            classification=classify_status(
+                sample.status_code
+            ),
+            content_type=sample.content_type,
+            content_length=sample.content_length,
+            redirect_to=sample.redirect_to,
+            soft_404=False,
+            error=None,
         ),
-        content_type=sample.content_type,
-        content_length=sample.content_length,
-        redirect_to=sample.redirect_to,
-        soft_404=False,
-        error=None,
+        "found",
     )
 
+
+async def _probe_candidate_batch(
+    client: httpx.AsyncClient,
+    candidates: list[URLCandidate],
+    baselines: list[Soft404Baseline],
+    config: PathDiscoveryConfig,
+    rate_limiter: AsyncRateLimiter,
+    stats: PathDiscoveryStats,
+    progress_callback: ProgressCallback | None,
+    completed_count: int,
+    total_count: int,
+) -> tuple[list[ContentProbe], int]:
+    """Probe one batch of candidates with the configured workers."""
+
+    if not candidates:
+        return (
+            [],
+            completed_count,
+        )
+
+    results: list[ContentProbe] = []
+    completed = completed_count
+
+    queue: asyncio.Queue[
+        URLCandidate | None
+    ] = asyncio.Queue(
+        maxsize=config.concurrency * 4
+    )
+
+    async def worker() -> None:
+        nonlocal completed
+
+        while True:
+            candidate = await queue.get()
+
+            try:
+                if candidate is None:
+                    return
+
+                result = await _probe_path(
+                    client=client,
+                    candidate=candidate,
+                    baselines=baselines,
+                    config=config,
+                    rate_limiter=rate_limiter,
+                )
+
+                _update_discovery_stats(
+                    stats,
+                    outcome,
+                    result,
+                )
+
+                if result is not None:
+                    results.append(
+                        result
+                    )
+
+                completed += 1
+
+                if progress_callback:
+                    progress_callback(
+                        completed,
+                        total_count,
+                        candidate.url,
+                    )
+
+            finally:
+                queue.task_done()
+
+    worker_count = min(
+        config.concurrency,
+        len(candidates),
+    )
+
+    workers = [
+        asyncio.create_task(
+            worker()
+        )
+        for _ in range(
+            worker_count
+        )
+    ]
+
+    for candidate in candidates:
+        await queue.put(
+            candidate
+        )
+
+    for _ in workers:
+        await queue.put(
+            None
+        )
+
+    await queue.join()
+
+    await asyncio.gather(
+        *workers
+    )
+
+    return (
+        results,
+        completed,
+    )
 
 async def discover_wordlist_paths_async(
     base_url: str,
@@ -815,8 +1286,11 @@ async def discover_wordlist_paths_async(
     concurrency: int = 40,
     rate_limit: float | None = None,
     max_response_bytes: int = 16_384,
+    min_response_size: int | None = None,
+    max_response_size: int | None = None,
+    depth_limit: int = 0,
     progress_callback: ProgressCallback | None = None,
-) -> list[ContentProbe]:
+) -> PathDiscoveryResult:
     """Probe wordlist candidates concurrently and return only real paths."""
 
     same_host_candidates = [
@@ -829,8 +1303,15 @@ async def discover_wordlist_paths_async(
         same_host_candidates
     )
 
+    stats = PathDiscoveryStats(
+        planned=total_candidates,
+    )
+
     if not same_host_candidates:
-        return []
+        return PathDiscoveryResult(
+            probes=[],
+            stats=stats,
+        )
 
     config = PathDiscoveryConfig(
         timeout=timeout,
@@ -843,6 +1324,13 @@ async def discover_wordlist_paths_async(
             MIN_RESPONSE_BYTES,
             max_response_bytes,
         ),
+        min_response_size=min_response_size,
+        max_response_size=max_response_size,
+        depth_limit=max(
+            0,
+            depth_limit,
+        ),
+
     )
     rate_limiter = AsyncRateLimiter(
         config.rate_limit
@@ -885,83 +1373,143 @@ async def discover_wordlist_paths_async(
             )
 
         except httpx.RequestError:
-            return []
-
-        queue: asyncio.Queue[
-            URLCandidate | None
-        ] = asyncio.Queue(
-            maxsize=config.concurrency * 4
+            return PathDiscoveryResult(
+                probes=[],
+                stats=stats,
+            )
+#
+        path_suffixes = _candidate_path_suffixes(
+            base_url,
+            same_host_candidates,
         )
 
-        async def worker() -> None:
-            nonlocal completed
+        if not path_suffixes:
+            return PathDiscoveryResult(
+                probes=[],
+                stats=stats,
+            )
 
-            while True:
-                candidate = await queue.get()
-
-                try:
-                    if candidate is None:
-                        return
-
-                    result = await _probe_path(
-                        client=client,
-                        candidate=candidate,
-                        baselines=baselines,
-                        config=config,
-                        rate_limiter=rate_limiter,
-                    )
-
-                    if result is not None:
-                        results.append(
-                            result
-                        )
-
-                    completed += 1
-
-                    if progress_callback:
-                        progress_callback(
-                            completed,
-                            total_candidates,
-                            candidate.url,
-                        )
-
-                finally:
-                    queue.task_done()
-
-        worker_count = min(
-            config.concurrency,
-            total_candidates,
+        origin = _origin_url(
+            base_url
         )
 
-        workers = [
-            asyncio.create_task(
-                worker()
-            )
-            for _ in range(
-                worker_count
-            )
-        ]
-
-        for candidate in same_host_candidates:
-            await queue.put(
-                candidate
-            )
-
-        for _ in workers:
-            await queue.put(
-                None
-            )
-
-        await queue.join()
-        await asyncio.gather(
-            *workers
+        source = (
+            same_host_candidates[0].source
+            if same_host_candidates
+            else "wordlist"
         )
 
-    return sorted(
-        results,
-        key=lambda result: result.url,
+        seen_candidate_urls = {
+            candidate.url
+            for candidate in same_host_candidates
+        }
+
+        seen_result_urls: set[str] = set()
+
+        all_results: list[ContentProbe] = []
+        completed = 0
+        planned_total = len(
+            same_host_candidates
+        )
+
+        current_candidates = same_host_candidates
+
+        for current_depth in range(
+            config.depth_limit + 1
+        ):
+            if not current_candidates:
+                break
+
+            level_results, completed = (
+                await _probe_candidate_batch(
+                    client=client,
+                    candidates=current_candidates,
+                    baselines=baselines,
+                    config=config,
+                    rate_limiter=rate_limiter,
+                    stats=stats,
+                    progress_callback=progress_callback,
+                    completed_count=completed,
+                    total_count=planned_total,
+                )
+            )
+
+            for result in level_results:
+                if result.url in seen_result_urls:
+                    continue
+
+                seen_result_urls.add(
+                    result.url
+                )
+
+                all_results.append(
+                    result
+                )
+
+            if current_depth >= config.depth_limit:
+                break
+
+            directory_urls: list[str] = []
+            seen_directory_urls: set[str] = set()
+
+            for result in level_results:
+                directory_url = _result_directory_url(
+                    result,
+                    origin,
+                )
+
+                if directory_url is None:
+                    continue
+
+                if directory_url in seen_directory_urls:
+                    continue
+
+                seen_directory_urls.add(
+                    directory_url
+                )
+
+                directory_urls.append(
+                    directory_url
+                )
+
+            if not directory_urls:
+                break
+
+            next_depth = (
+                current_depth
+                + 1
+            )
+
+            current_candidates = (
+                _build_recursive_candidates(
+                    directory_urls=directory_urls,
+                    path_suffixes=path_suffixes,
+                    source=source,
+                    depth=next_depth,
+                    seen_urls=seen_candidate_urls,
+                )
+            )
+
+            planned_total += len(
+                current_candidates
+            )
+            stats.recursive_candidates += len(
+                current_candidates
+            )
+
+            stats.planned += len(
+                current_candidates
+            )
+
+
+#
+    return PathDiscoveryResult(
+        probes=sorted(
+            results,
+            key=lambda result: result.url,
+        ),
+        stats=stats,
     )
-
 
 def discover_wordlist_paths(
     base_url: str,
@@ -970,8 +1518,13 @@ def discover_wordlist_paths(
     concurrency: int = 40,
     rate_limit: float | None = None,
     max_response_bytes: int = 16_384,
+    min_response_size: int | None = None,
+    max_response_size: int | None = None,    
+    depth_limit: int = 0,
+
     progress_callback: ProgressCallback | None = None,
-) -> list[ContentProbe]:
+) -> PathDiscoveryResult:
+
     """Synchronous wrapper for the CLI application."""
 
     try:
@@ -983,14 +1536,19 @@ def discover_wordlist_paths(
                 concurrency=concurrency,
                 rate_limit=rate_limit,
                 max_response_bytes=max_response_bytes,
+                min_response_size=min_response_size,
+                max_response_size=max_response_size,
+                depth_limit=depth_limit,
                 progress_callback=progress_callback,
             )
         )
 
     except KeyboardInterrupt as exc:
         raise PathDiscoveryInterrupted(
-            []
+            [],
+            PathDiscoveryStats(),
         ) from exc
+
 
 
 def filter_interesting_wordlist_results(

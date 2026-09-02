@@ -111,6 +111,29 @@ class ContentProbe:
 
     soft_404: bool
     error: str | None
+
+@dataclass
+class PathDiscoveryStats:
+    planned: int = 0
+    tested: int = 0
+    found: int = 0
+
+    not_found: int = 0
+    ignored_status: int = 0
+    soft_404: int = 0
+    empty_success: int = 0
+    errors: int = 0
+
+    redirects: int = 0
+    protected: int = 0
+    recursive_candidates: int = 0
+
+
+@dataclass
+class PathDiscoveryResult:
+    probes: list[ContentProbe]
+    stats: PathDiscoveryStats
+
 # ---------------- TLS Intelligence ----------------
 @dataclass
 class HostnameCandidate:

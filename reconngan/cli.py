@@ -108,6 +108,25 @@ def positive_float(
 
     return number
 
+def non_negative_int(
+    value: str,
+) -> int:
+    try:
+        number = int(
+            value
+        )
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be an integer"
+        ) from exc
+
+    if number < 0:
+        raise argparse.ArgumentTypeError(
+            "must be greater than or equal to 0"
+        )
+
+    return number
+
 def wordlist_limit_int(
     value: str,
 ) -> int:
@@ -119,6 +138,30 @@ def wordlist_limit_int(
         raise argparse.ArgumentTypeError(
             "wordlist limit must not "
             "exceed 50.000"
+        )
+
+    return number
+
+def depth_int(
+    value: str,
+) -> int:
+    try:
+        number = int(
+            value
+        )
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be an integer"
+        ) from exc
+
+    if number < 0:
+        raise argparse.ArgumentTypeError(
+            "must be greater than or equal to 0"
+        )
+
+    if number > 3:
+        raise argparse.ArgumentTypeError(
+            "depth must not exceed 3"
         )
 
     return number
@@ -269,6 +312,27 @@ def parse_args():
         help=(
             "Maximum response bytes sampled per discovered path "
             "(default: 16384)"
+        ),
+    )
+    network_group.add_argument(
+        "--min-response-size",
+        type=non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "Only keep active path discovery results "
+            "with response size greater than or equal to N bytes."
+        ),
+    )
+
+    network_group.add_argument(
+        "--max-response-size",
+        type=non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "Only keep active path discovery results "
+            "with response size less than or equal to N bytes."
         ),
     )
 
@@ -439,7 +503,17 @@ def parse_args():
         ),
     )
 
-
+    recon_group.add_argument(
+        "--depth",
+        type=depth_int,
+        default=0,
+        metavar="N",
+        help=(
+            "Recursively scan discovered directories "
+            "up to N levels. 0 disables recursion. "
+            "Requires --discover-paths."
+        ),
+    )
 
     recon_group.add_argument(
         "--wordlist-limit",
@@ -506,6 +580,35 @@ def parse_args():
     if args.extensions and args.wordlist is None:
         parser.error(
             "--extensions requires --discover-paths FILE"
+        )
+
+    if args.depth > 0 and args.wordlist is None:
+        parser.error(
+            "--depth requires --discover-paths FILE"
+        )
+
+    return args
+
+    size_filter_requested = (
+        args.min_response_size is not None
+        or args.max_response_size is not None
+    )
+
+    if size_filter_requested and args.wordlist is None:
+        parser.error(
+            "--min-response-size/--max-response-size "
+            "require --discover-paths FILE"
+        )
+
+    if (
+        args.min_response_size is not None
+        and args.max_response_size is not None
+        and args.min_response_size
+        > args.max_response_size
+    ):
+        parser.error(
+            "--min-response-size must be less than "
+            "or equal to --max-response-size"
         )
 
     return args
