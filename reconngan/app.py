@@ -22,7 +22,6 @@ from .models import (
     HeaderRule,
     Finding,
     WebResourceAnalysis,
-    PathDiscoveryStats,
 )
 from .headers import analyze_headers
 from .scoring import (
@@ -46,7 +45,6 @@ from .reporting import (
     print_url_candidates,
     print_content_results,
     print_path_discovery_results,
-    print_path_discovery_stats,
 
     print_tls_info,
     print_dns_resolutions,
@@ -213,7 +211,6 @@ def main() -> int:
     content_results = []
     wordlist_candidates = []
     wordlist_results = []
-    wordlist_stats = PathDiscoveryStats()
 
     tls_result = None
 
@@ -925,7 +922,7 @@ def main() -> int:
                         ),
                     )
 
-                path_discovery = discover_wordlist_paths(
+                wordlist_results = discover_wordlist_paths(
                     base_url=str(response.url),
                     candidates=wordlist_candidates,
                     timeout=args.timeout,
@@ -934,18 +931,16 @@ def main() -> int:
                     max_response_bytes=(
                         args.max_response_bytes
                     ),
+                    depth_limit=args.depth,
                     progress_callback=(
                         update_path_progress
                     ),
                 )
 
-                wordlist_results = path_discovery.probes
-                wordlist_stats = path_discovery.stats
 
 
         except PathDiscoveryInterrupted as exc:
             wordlist_results = exc.results
-            wordlist_stats = exc.stats
             scan_interrupted = True
 
         path_elapsed = (
@@ -964,9 +959,6 @@ def main() -> int:
                 "discovered."
                 "[/dim]"
             )
-        print_path_discovery_stats(
-            wordlist_stats
-        )
 
 
         if scan_interrupted:
@@ -1001,9 +993,8 @@ def main() -> int:
                 "\n[green][+] Subdirectory/path discovery "
                 "completed.[/green] "
                 f"[dim]"
-                f"{wordlist_stats.tested}/"
-                f"{wordlist_stats.planned} tested, "
-                f"{wordlist_stats.found} found, "
+                f"{len(wordlist_candidates)} tested, "
+                f"{len(wordlist_results)} found, "
                 f"concurrency {args.concurrency}, "
                 f"depth {args.depth}, "
                 f"rate {rate_text}, "
@@ -1034,7 +1025,6 @@ def main() -> int:
 
             wordlist_candidates=wordlist_candidates,
             wordlist_results=wordlist_results,
-            wordlist_stats=wordlist_stats,
 
             tls_result=tls_result,
             hostname_candidates=hostname_candidates,

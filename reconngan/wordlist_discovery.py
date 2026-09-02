@@ -23,11 +23,8 @@ from .content_discovery import (
 )
 from .models import (
     ContentProbe,
-    PathDiscoveryResult,
-    PathDiscoveryStats,
     URLCandidate,
 )
-from typing import Literal
 
 MAX_WORDLIST_ENTRIES = 50_000
 
@@ -90,14 +87,6 @@ ProgressCallback = Callable[
     [int, int, str],
     None,
 ]
-PathProbeOutcome = Literal[
-    "found",
-    "not_found",
-    "ignored_status",
-    "soft_404",
-    "empty_success",
-    "error",
-]
 
 class WordlistLoadError(ValueError):
     """Raised when a wordlist cannot be loaded."""
@@ -109,19 +98,16 @@ class PathDiscoveryInterrupted(KeyboardInterrupt):
     def __init__(
         self,
         results: list[ContentProbe],
-        stats: PathDiscoveryStats | None = None,
     ) -> None:
         super().__init__(
             "Path discovery interrupted by user"
         )
+
         self.results = list(
             results
         )
-        self.stats = (
-            stats
-            if stats is not None
-            else PathDiscoveryStats()
-        )
+
+
 
 @dataclass(frozen=True)
 class PathDiscoveryConfig:
@@ -215,9 +201,11 @@ class AsyncRateLimiter:
 
         if delay > 0:
             await asyncio.sleep(
-                delay
+                min(
+                    delay,
+                    5.0,
+                )
             )
-
 
 def _normalize_wordlist_entry(
     raw_entry: str,
@@ -893,15 +881,19 @@ async def _build_soft404_baselines(
     client: httpx.AsyncClient,
     base_url: str,
     config: PathDiscoveryConfig,
-    rate_limiter: AsyncRateLimiter,
+    rate_limiter: AsyncRateLimiter | None = None,
 ) -> list[Soft404Baseline]:
+    """Build soft-404 baselines without blocking path discovery."""
+
+    _ = rate_limiter
+
     origin = _origin_url(
         base_url
     )
 
     baselines: list[Soft404Baseline] = []
 
-    for _ in range(
+    for _index in range(
         config.baseline_samples
     ):
         token = secrets.token_hex(
@@ -916,9 +908,8 @@ async def _build_soft404_baselines(
             origin,
             random_path,
         )
-        try:
-            await rate_limiter.wait()
 
+        try:
             sample = await _request_sample_with_deadline(
                 client=client,
                 url=url,
@@ -926,7 +917,7 @@ async def _build_soft404_baselines(
             )
 
         except (
-            httpx.RequestError,
+            httpx.HTTPError,
             asyncio.TimeoutError,
         ):
             continue
@@ -945,7 +936,6 @@ async def _build_soft404_baselines(
         )
 
     return baselines
-
 
 def _looks_like_soft404(
     sample: SampledHTTPResponse,
@@ -1043,54 +1033,6 @@ def _is_empty_success_noise(
 
     return not normalized_body
 
-def _update_discovery_stats(
-    stats: PathDiscoveryStats,
-    outcome: PathProbeOutcome,
-    result: ContentProbe | None,
-) -> None:
-    """Update path discovery telemetry for one probed candidate."""
-
-    stats.tested += 1
-
-    if outcome == "found":
-        stats.found += 1
-
-        if result is None:
-            return
-
-        if (
-            result.status_code
-            in REDIRECT_STATUS_CODES
-        ):
-            stats.redirects += 1
-
-        if result.status_code in {
-            401,
-            403,
-        }:
-            stats.protected += 1
-
-        return
-
-    if outcome == "not_found":
-        stats.not_found += 1
-        return
-
-    if outcome == "ignored_status":
-        stats.ignored_status += 1
-        return
-
-    if outcome == "soft_404":
-        stats.soft_404 += 1
-        return
-
-    if outcome == "empty_success":
-        stats.empty_success += 1
-        return
-
-    if outcome == "error":
-        stats.errors += 1
-        return
 
 async def _probe_path(
     client: httpx.AsyncClient,
@@ -1098,80 +1040,50 @@ async def _probe_path(
     baselines: list[Soft404Baseline],
     config: PathDiscoveryConfig,
     rate_limiter: AsyncRateLimiter,
-) -> tuple[ContentProbe | None, PathProbeOutcome]:
+) -> ContentProbe | None:
     try:
         await rate_limiter.wait()
 
-        sample = await _request_sample_with_deadline(
+        sample = await _request_sample(
             client=client,
             url=candidate.url,
-            config=config,
+            max_response_bytes=(
+                config.max_response_bytes
+            ),
         )
 
-    except (
-        httpx.RequestError,
-        asyncio.TimeoutError,
-    ):
-        return (
-            None,
-            "error",
-        )
-
-
+    except httpx.RequestError:
+        return None
 
     if (
         sample.status_code
         not in config.found_statuses
-    ):
-        if sample.status_code == 404:
-            return (
-                None,
-                "not_found",
-            )
-
-        return (
-            None,
-            "ignored_status",
-        )
-
-    if not _response_size_allowed(
-        sample,
-        config,
     ):
         return None
 
     if _is_empty_success_noise(
         sample
     ):
-        return (
-            None,
-            "empty_success",
-        )
+        return None
 
     if _looks_like_soft404(
         sample,
         baselines,
     ):
-        return (
-            None,
-            "soft_404",
-        )
+        return None
 
-    return (
-        ContentProbe(
-            url=candidate.url,
-            source=candidate.source,
-            status_code=sample.status_code,
-            classification=classify_status(
-                sample.status_code
-            ),
-            content_type=sample.content_type,
-            content_length=sample.content_length,
-            redirect_to=sample.redirect_to,
-            soft_404=False,
-            error=None,
+    return ContentProbe(
+        url=candidate.url,
+        source=candidate.source,
+        status_code=sample.status_code,
+        classification=classify_status(
+            sample.status_code
         ),
-        "found",
+        content_type=sample.content_type,
+        content_length=sample.content_length,
+        redirect_to=sample.redirect_to,
+        soft_404=False,
+        error=None,
     )
 
 
@@ -1181,7 +1093,6 @@ async def _probe_candidate_batch(
     baselines: list[Soft404Baseline],
     config: PathDiscoveryConfig,
     rate_limiter: AsyncRateLimiter,
-    stats: PathDiscoveryStats,
     progress_callback: ProgressCallback | None,
     completed_count: int,
     total_count: int,
@@ -1213,19 +1124,23 @@ async def _probe_candidate_batch(
                 if candidate is None:
                     return
 
-                result = await _probe_path(
-                    client=client,
-                    candidate=candidate,
-                    baselines=baselines,
-                    config=config,
-                    rate_limiter=rate_limiter,
-                )
+                try:
+                   result = await _probe_path(
+                       client=client,
+                       candidate=candidate,
+                       baselines=baselines,
+                       config=config,
+                       rate_limiter=rate_limiter,
+                   )
 
-                _update_discovery_stats(
-                    stats,
-                    outcome,
-                    result,
-                )
+                   if result is not None:
+                       results.append(
+                           result
+                       )
+
+                except asyncio.TimeoutError:
+                    result = None
+                    outcome = "error"
 
                 if result is not None:
                     results.append(
@@ -1233,7 +1148,7 @@ async def _probe_candidate_batch(
                     )
 
                 completed += 1
-
+#ppp
                 if progress_callback:
                     progress_callback(
                         completed,
@@ -1290,7 +1205,7 @@ async def discover_wordlist_paths_async(
     max_response_size: int | None = None,
     depth_limit: int = 0,
     progress_callback: ProgressCallback | None = None,
-) -> PathDiscoveryResult:
+) -> list[ContentProbe]:
     """Probe wordlist candidates concurrently and return only real paths."""
 
     same_host_candidates = [
@@ -1303,15 +1218,9 @@ async def discover_wordlist_paths_async(
         same_host_candidates
     )
 
-    stats = PathDiscoveryStats(
-        planned=total_candidates,
-    )
 
     if not same_host_candidates:
-        return PathDiscoveryResult(
-            probes=[],
-            stats=stats,
-        )
+        return []
 
     config = PathDiscoveryConfig(
         timeout=timeout,
@@ -1363,20 +1272,25 @@ async def discover_wordlist_paths_async(
             )
 
         try:
-            baselines = (
-                await _build_soft404_baselines(
+            baselines = await asyncio.wait_for(
+                _build_soft404_baselines(
                     client=client,
                     base_url=base_url,
                     config=config,
                     rate_limiter=rate_limiter,
-                )
+                ),
+                timeout=(
+                    config.timeout
+                    + 2.0
+                ),
             )
 
-        except httpx.RequestError:
-            return PathDiscoveryResult(
-                probes=[],
-                stats=stats,
-            )
+        except (
+            httpx.HTTPError,
+            asyncio.TimeoutError,
+        ):
+            baselines = []
+
 #
         path_suffixes = _candidate_path_suffixes(
             base_url,
@@ -1384,10 +1298,7 @@ async def discover_wordlist_paths_async(
         )
 
         if not path_suffixes:
-            return PathDiscoveryResult(
-                probes=[],
-                stats=stats,
-            )
+            return []
 
         origin = _origin_url(
             base_url
@@ -1427,7 +1338,6 @@ async def discover_wordlist_paths_async(
                     baselines=baselines,
                     config=config,
                     rate_limiter=rate_limiter,
-                    stats=stats,
                     progress_callback=progress_callback,
                     completed_count=completed,
                     total_count=planned_total,
@@ -1493,22 +1403,12 @@ async def discover_wordlist_paths_async(
             planned_total += len(
                 current_candidates
             )
-            stats.recursive_candidates += len(
-                current_candidates
-            )
-
-            stats.planned += len(
-                current_candidates
-            )
 
 
 #
-    return PathDiscoveryResult(
-        probes=sorted(
-            results,
-            key=lambda result: result.url,
-        ),
-        stats=stats,
+    return sorted(
+        all_results,
+        key=lambda result: result.url,
     )
 
 def discover_wordlist_paths(
@@ -1523,7 +1423,7 @@ def discover_wordlist_paths(
     depth_limit: int = 0,
 
     progress_callback: ProgressCallback | None = None,
-) -> PathDiscoveryResult:
+) -> list[ContentProbe]:
 
     """Synchronous wrapper for the CLI application."""
 
@@ -1546,7 +1446,6 @@ def discover_wordlist_paths(
     except KeyboardInterrupt as exc:
         raise PathDiscoveryInterrupted(
             [],
-            PathDiscoveryStats(),
         ) from exc
 
 
