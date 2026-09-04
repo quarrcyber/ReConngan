@@ -1,156 +1,262 @@
-ReCoongan
+# RECOONGAN
 
-ReCoongan is an evidence-driven HTTP security reconnaissance scanner for pentesters, security engineers, and learners who want to quickly understand the public security posture of a web target.
+**ReCoongan** is an evidence-driven HTTP security reconnaissance scanner for pentesters, security engineers, and learners.
 
-It does not exploit targets. It collects observable evidence, analyzes common web security signals, and reports what is missing, weak, or worth reviewing.
+It helps you quickly understand the public security posture of a web target by collecting observable evidence from HTTP, TLS, DNS, cookies, public files, and lightweight service signals.
 
- ____  _____  ____   ___ ====___  _   _   ____      _     _   _
-|  _ \| ____|/ ___| /  _ \__/ _ \| \ | | / ___|    / \   | \ | |
-| |_) |  _| | |    |  / \ || / \ |  \| || |  _    / _ \  |  \| |
-|  _ <| |___| |___ |  \_/ || \_/ | |\  || |_| |  / ___ \ | |\  |
-|_| \_\_____|\____| \____/==\___/|_| \_| \____| /_/   \_\|_| \_|
+ReCoongan does **not** exploit targets.
+It only inspects externally visible security information and reports what is missing, weak, or worth reviewing.
 
-Current status
+---
 
-Version: 0.2.1
+## Current Status
 
-Package name: recoongan
+| Item              | Value                                        |
+| ----------------- | -------------------------------------------- |
+| Version           | `0.2.1`                                      |
+| Package           | `recoongan`                                  |
+| CLI command       | `recoongan`                                  |
+| Language          | Python 3.10+                                 |
+| Main dependencies | `httpx`, `rich`, `cryptography`, `dnspython` |
 
-CLI command: recoongan
+---
 
-Language: Python 3.10+
+## What ReCoongan Can Do
 
-Main dependencies: httpx, rich, cryptography, dnspython
+ReCoongan helps you inspect a web target from multiple reconnaissance angles.
 
-What ReCoongan Can Do
+### HTTP Security Headers
 
-ReCoongan helps you inspect a target from multiple external reconnaissance angles:
+ReCoongan checks important browser security headers and grades the target from **A to F**.
 
-Analyze HTTP security headers and grade the target from A to F
+It reviews headers such as:
 
-Detect missing or weak headers such as:
+* `Strict-Transport-Security`
+* `Content-Security-Policy`
+* `X-Frame-Options`
+* `X-Content-Type-Options`
+* `Referrer-Policy`
+* `Permissions-Policy`
 
-Strict-Transport-Security
+The goal is to identify missing, weak, or misconfigured security controls.
 
-Content-Security-Policy
+---
 
-X-Frame-Options
+### Web Reconnaissance
 
-X-Content-Type-Options
+ReCoongan can inspect common public web signals, including:
 
-Referrer-Policy
+* Redirect behavior
+* Cookie attributes
+* `robots.txt`
+* `sitemap.xml`
+* `security.txt`
+* Public URL candidates
 
-Permissions-Policy
+This helps you understand what the target exposes before deeper manual testing.
 
-Review redirects, cookies, and basic HTTP behavior
+---
 
-Check known web files such as:
+### Content Discovery
 
-robots.txt
+ReCoongan supports controlled content discovery using a custom wordlist.
 
-sitemap.xml
+It can probe common paths and extensions while respecting configured limits such as rate, concurrency, and wordlist size.
 
-security.txt
+Example use cases:
 
-Discover URL candidates from public web resources
+* Find exposed directories
+* Identify interesting files
+* Discover common application paths
+* Review unexpected public resources
 
-Probe common paths and extensions with a controlled wordlist
+---
 
-Inspect TLS configuration, certificate metadata, SAN entries, validity, and hostname matching
+### TLS Intelligence
 
-Discover hostname candidates from certificate data
+ReCoongan can inspect TLS and certificate information, including:
 
-Resolve DNS information and DNS records
+* TLS version
+* Cipher information
+* ALPN
+* Certificate metadata
+* Validity period
+* Subject Alternative Names
+* Hostname matching
 
-Perform lightweight service checks
+This helps reveal certificate issues, exposed hostnames, and TLS configuration details.
 
-Save scan results as JSON for later review or reporting
+---
 
-Why This Tool Exists
+### DNS and Hostname Reconnaissance
 
-ReCoongan is built for defensive reconnaissance.
+ReCoongan can collect DNS-related evidence, including:
 
-It is useful when you want to answer questions like:
+* Hostname candidates from certificate data
+* DNS resolution results
+* DNS records
+* Lightweight service checks
 
-Is this web target using important browser security headers?
+This provides a broader view of the target’s externally visible infrastructure.
 
-Are there obvious HTTP, TLS, DNS, or cookie issues?
+---
 
-What public files and URL candidates are exposed?
+### JSON Reporting
 
-What hostnames or services are visible from outside?
+Scan results can be saved as JSON for later review, automation, or reporting.
 
-What evidence should be reviewed before deeper manual testing?
+This makes ReCoongan useful not only as a terminal tool, but also as a data source for security notes, audit logs, and future reporting workflows.
 
-Installation
+---
 
+## Why Use ReCoongan?
+
+ReCoongan is designed for defensive reconnaissance.
+
+It helps answer practical questions such as:
+
+* Is the target using important HTTP security headers?
+* Are there obvious HTTP, TLS, DNS, or cookie issues?
+* What public files are exposed?
+* What URL candidates are visible?
+* What hostnames can be discovered from certificate data?
+* What evidence should be reviewed before manual testing?
+
+ReCoongan focuses on **evidence**, not assumptions.
+
+---
+
+## Installation
+
+```bash
 git clone https://github.com/quarrcyber/ReCoongan.git
 cd ReCoongan
 python3 -m pip install -e .
+```
 
-Usage
+---
+
+## Usage
 
 Run a basic scan:
 
+```bash
 recoongan https://example.com
+```
 
 Run all available checks:
 
+```bash
 recoongan https://example.com --all
+```
 
-Run selected reconnaissance modules:
+Run selected modules:
 
-recoongan https://example.com --check-tls --dns --dns-records --known-files
+```bash
+recoongan https://example.com \
+  --check-tls \
+  --dns \
+  --dns-records \
+  --known-files
+```
 
 Run content discovery with a wordlist:
 
+```bash
 recoongan https://example.com \
   --discover-paths wordlist-congan/wordlist.txt \
   --wordlist-limit 200 \
   -x php,html
+```
 
-Save the result as JSON:
+Save results as JSON:
 
+```bash
 recoongan https://example.com --all --save-report report.json
+```
 
-Output
+---
 
-ReCoongan prints a terminal report containing:
+## Output
 
-Overall security grade
+ReCoongan prints a clear terminal report containing:
 
-Passed and failed checks
+* Overall security grade
+* Passed and failed checks
+* Collected evidence
+* Security findings
+* Reconnaissance results
+* Optional JSON report output
 
-Evidence collected from the target
+The output is designed to be readable, reviewable, and useful during authorized security assessment.
 
-Security findings
+---
 
-Reconnaissance results
+## Future Work
 
-Optional JSON report output
+The current project is complete up to the planned **14 modules**.
 
-The goal is to provide clear evidence, not guesswork.
+Future improvements may include:
 
-Future Work
+### WAF / CDN / Edge Intelligence
 
-The current project is complete up to the planned 14 modules. Future improvements may include:
+Detect whether a target is protected by providers such as:
 
-WAF / CDN / Edge Intelligence
-Detect whether a target is protected by providers such as Cloudflare, Akamai, Fastly, AWS CloudFront, or similar edge platforms.
+* Cloudflare
+* Akamai
+* Fastly
+* AWS CloudFront
+* Other CDN or edge platforms
 
-Scope / Budget Engine
-Add stricter scan limits for safer reconnaissance, including request budgets, per-module caps, and clearer scope boundaries.
+---
 
-Better Reports
-Improve exported reports with richer summaries, remediation notes, and possibly HTML output.
+### Scope / Budget Engine
 
-Rule / Plugin System
+Add stricter scan controls for safer reconnaissance, including:
+
+* Request budgets
+* Per-module limits
+* Stronger rate boundaries
+* Clearer scan scope enforcement
+
+---
+
+### Better Reports
+
+Improve exported reports with:
+
+* Richer summaries
+* Remediation notes
+* Cleaner JSON structure
+* Possible HTML report output
+
+---
+
+### Rule / Plugin System
+
 Allow checks to be extended without changing the core scanner logic.
 
-Disclaimer
+This would make ReCoongan easier to grow over time as new checks, headers, and reconnaissance techniques are added.
 
-ReCoongan is intended for education, defensive security review, and authorized penetration testing. You are responsible for ensuring that every target you scan is within your legal and contractual scope.
+---
 
-License
+## Ethical Use
 
-No license file is included yet. Add a license before accepting external contributions or publishing the project as reusable open-source software.
+ReCoongan is intended for:
+
+* Education
+* Defensive security review
+* Authorized penetration testing
+* Security learning and research
+
+Only scan targets that you own or have explicit permission to test.
+
+You are responsible for ensuring that every target is within your legal and contractual scope.
+
+---
+
+## License
+
+No license file is included yet.
+
+Add a license before accepting external contributions or publishing the project as reusable open-source software.
