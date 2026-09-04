@@ -4,44 +4,16 @@
     "status_code": 200,
     "http": {
         "http_version": "HTTP/1.1",
-        "response_time_ms": 522.984,
+        "response_time_ms": 778.226,
         "content_type": "text/html; charset=utf-8",
         "content_length": "Not provided"
     },
-    "tls": {
-        "host": "github.com",
-        "port": 443,
-        "version": "TLSv1.3",
-        "cipher": "TLS_AES_128_GCM_SHA256",
-        "cipher_bits": 128,
-        "alpn": "h2",
-        "subject": "CN=github.com",
-        "issuer": "CN=Sectigo Public Server Authentication CA DV E36,O=Sectigo Limited,C=GB",
-        "serial_number": "72010E03F4A067FE4E796266430718F6",
-        "sha256_fingerprint": "17:F8:FD:2E:3F:D2:C1:13:FC:B9:77:2D:8A:4B:AB:B8:52:2D:D0:6D:D0:79:49:15:A4:FF:98:B1:B6:86:3A:00",
-        "valid_from": "2026-07-03T00:00:00+00:00",
-        "valid_until": "2026-09-30T23:59:59+00:00",
-        "days_remaining": 30,
-        "dns_names": [
-            "github.com",
-            "www.github.com"
-        ],
-        "ip_addresses": [],
-        "hostname_match": true,
-        "warnings": [
-            "Certificate expires in 30 days"
-        ]
-    },
+    "tls": null,
     "hostname_candidates": [
         {
             "hostname": "github.com",
             "source": "target",
             "certificate_fingerprint": ""
-        },
-        {
-            "hostname": "www.github.com",
-            "source": "tls:san",
-            "certificate_fingerprint": "17:F8:FD:2E:3F:D2:C1:13:FC:B9:77:2D:8A:4B:AB:B8:52:2D:D0:6D:D0:79:49:15:A4:FF:98:B1:B6:86:3A:00"
         }
     ],
     "score": 90.0,
@@ -158,84 +130,196 @@
         {
             "hostname": "github.com",
             "record_type": "TXT",
-            "values": [],
-            "error": "TXT lookup timed out"
-        }
-    ],
-    "dns_validation": [
-        {
-            "hostname": "github.com",
-            "source": "target",
-            "canonical_name": null,
-            "ipv4_addresses": [
-                "20.205.243.166"
+            "values": [
+                "\"00Dd0000000hHE0=1TBKg000000TN2r\"",
+                "\"MS=6BF03E6AF5CB689E315FB6199603BABF2C88D805\"",
+                "\"MS=ms44452932\"",
+                "\"MS=ms58704441\"",
+                "\"TAILSCALE-xOzoDvFUzZr5YYVCQFuD\"",
+                "\"adobe-idp-site-verification=b92c9e999aef825edc36e0a3d847d2dbad5b2fc0e05c79ddd7a16139b48ecf4b\"",
+                "\"anthropic-domain-verification-4az7qn=if8YWuRRqwLycGJDooumzHtxm\"",
+                "\"apple-domain-verification=RyQhdzTl6Z6x8ZP4\"",
+                "\"atlassian-domain-verification=jjgw98AKv2aeoYFxiL/VFaoyPkn3undEssTRuMg6C/3Fp/iqhkV4HVV7WjYlVeF8\"",
+                "\"calendly-site-verification=at0DQARi7IZvJtXQAWhMqpmIzpvoBNF7aam5VKKxP\"",
+                "\"cursor-domain-verification-gtfwmt=1rfLOtiTngX5QSxD5HvNKTvm3\"",
+                "\"docusign=087098e3-3d46-47b7-9b4e-8a23028154cd\"",
+                "\"facebook-domain-verification=39xu4jzl7roi7x0n93ldkxjiaarx50\"",
+                "\"google-site-verification=82Le34Flgtd15ojYhHlGF_6g72muSjamlMVThBOJpks\"",
+                "\"google-site-verification=UTM-3akMgubp6tQtgEuAkYNYLyYAvpTnnSrDMWoDR3o\"",
+                "\"jamf-site-verification=XtaPNIYghF_e_xRDI8CjgQ\"",
+                "\"krisp-domain-verification=ZlyiK7XLhnaoUQb2hpak1PLY7dFkl1WE\"",
+                "\"loom-site-verification=f3787154f1154b7880e720a511ea664d\"",
+                "\"miro-verification=d2e174fdb00c71e0bcf58f8e58c3da2dd80dcfa9\"",
+                "\"openai-domain-verification=dv-3nh33eQwdkotMIAzLrIDVZo1\"",
+                "\"serval-domain-verification-ydryhj=qbkiEakpwEpTvHh5fIiCqtaue\"",
+                "\"shopify-verification-code=t1YPwcmvnxZyBycaCpk1MPyWoFs72o\"",
+                "\"stripe-verification=f88ef17321660a01bab1660454192e014defa29ba7b8de9633c69d6b4912217f\"",
+                "\"v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.2\" \"27.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all\""
             ],
-            "ipv6_addresses": [],
-            "resolved": true,
-            "errors": []
+            "error": null
         },
         {
-            "hostname": "www.github.com",
-            "source": "tls:san",
-            "canonical_name": "github.com",
-            "ipv4_addresses": [
-                "20.205.243.166"
+            "hostname": "_dmarc.github.com",
+            "record_type": "DMARC",
+            "values": [
+                "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
             ],
-            "ipv6_addresses": [],
-            "resolved": true,
-            "errors": []
-        }
-    ],
-    "service_validation": [
-        {
-            "hostname": "github.com",
-            "source": "target",
-            "scheme": "https",
-            "port": 443,
-            "url": "https://github.com:443/",
-            "reachable": true,
-            "status_code": 200,
-            "final_url": "https://github.com/",
-            "redirected": false,
-            "error": null
-        },
-        {
-            "hostname": "github.com",
-            "source": "target",
-            "scheme": "http",
-            "port": 80,
-            "url": "http://github.com:80/",
-            "reachable": true,
-            "status_code": 200,
-            "final_url": "https://github.com/",
-            "redirected": true,
-            "error": null
-        },
-        {
-            "hostname": "www.github.com",
-            "source": "tls:san",
-            "scheme": "https",
-            "port": 443,
-            "url": "https://www.github.com:443/",
-            "reachable": true,
-            "status_code": 200,
-            "final_url": "https://github.com/",
-            "redirected": true,
-            "error": null
-        },
-        {
-            "hostname": "www.github.com",
-            "source": "tls:san",
-            "scheme": "http",
-            "port": 80,
-            "url": "http://www.github.com:80/",
-            "reachable": true,
-            "status_code": 200,
-            "final_url": "https://github.com/",
-            "redirected": true,
             "error": null
         }
     ],
+    "dns_intelligence": {
+        "hostname": "github.com",
+        "records": [
+            {
+                "hostname": "github.com",
+                "record_type": "A",
+                "values": [
+                    "20.205.243.166"
+                ],
+                "error": null
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "AAAA",
+                "values": [],
+                "error": "NOANSWER"
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "CNAME",
+                "values": [],
+                "error": "NOANSWER"
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "MX",
+                "values": [
+                    "0 github-com.mail.protection.outlook.com."
+                ],
+                "error": null
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "NS",
+                "values": [
+                    "dns1.p08.nsone.net.",
+                    "dns2.p08.nsone.net.",
+                    "dns3.p08.nsone.net.",
+                    "dns4.p08.nsone.net.",
+                    "ns-1283.awsdns-32.org.",
+                    "ns-1707.awsdns-21.co.uk.",
+                    "ns-421.awsdns-52.com.",
+                    "ns-520.awsdns-01.net."
+                ],
+                "error": null
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "TXT",
+                "values": [
+                    "\"00Dd0000000hHE0=1TBKg000000TN2r\"",
+                    "\"MS=6BF03E6AF5CB689E315FB6199603BABF2C88D805\"",
+                    "\"MS=ms44452932\"",
+                    "\"MS=ms58704441\"",
+                    "\"TAILSCALE-xOzoDvFUzZr5YYVCQFuD\"",
+                    "\"adobe-idp-site-verification=b92c9e999aef825edc36e0a3d847d2dbad5b2fc0e05c79ddd7a16139b48ecf4b\"",
+                    "\"anthropic-domain-verification-4az7qn=if8YWuRRqwLycGJDooumzHtxm\"",
+                    "\"apple-domain-verification=RyQhdzTl6Z6x8ZP4\"",
+                    "\"atlassian-domain-verification=jjgw98AKv2aeoYFxiL/VFaoyPkn3undEssTRuMg6C/3Fp/iqhkV4HVV7WjYlVeF8\"",
+                    "\"calendly-site-verification=at0DQARi7IZvJtXQAWhMqpmIzpvoBNF7aam5VKKxP\"",
+                    "\"cursor-domain-verification-gtfwmt=1rfLOtiTngX5QSxD5HvNKTvm3\"",
+                    "\"docusign=087098e3-3d46-47b7-9b4e-8a23028154cd\"",
+                    "\"facebook-domain-verification=39xu4jzl7roi7x0n93ldkxjiaarx50\"",
+                    "\"google-site-verification=82Le34Flgtd15ojYhHlGF_6g72muSjamlMVThBOJpks\"",
+                    "\"google-site-verification=UTM-3akMgubp6tQtgEuAkYNYLyYAvpTnnSrDMWoDR3o\"",
+                    "\"jamf-site-verification=XtaPNIYghF_e_xRDI8CjgQ\"",
+                    "\"krisp-domain-verification=ZlyiK7XLhnaoUQb2hpak1PLY7dFkl1WE\"",
+                    "\"loom-site-verification=f3787154f1154b7880e720a511ea664d\"",
+                    "\"miro-verification=d2e174fdb00c71e0bcf58f8e58c3da2dd80dcfa9\"",
+                    "\"openai-domain-verification=dv-3nh33eQwdkotMIAzLrIDVZo1\"",
+                    "\"serval-domain-verification-ydryhj=qbkiEakpwEpTvHh5fIiCqtaue\"",
+                    "\"shopify-verification-code=t1YPwcmvnxZyBycaCpk1MPyWoFs72o\"",
+                    "\"stripe-verification=f88ef17321660a01bab1660454192e014defa29ba7b8de9633c69d6b4912217f\"",
+                    "\"v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.2\" \"27.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all\""
+                ],
+                "error": null
+            },
+            {
+                "hostname": "_dmarc.github.com",
+                "record_type": "DMARC",
+                "values": [
+                    "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
+                ],
+                "error": null
+            }
+        ],
+        "cname_chain": [
+            "github.com"
+        ],
+        "nameservers": [
+            "dns1.p08.nsone.net.",
+            "dns2.p08.nsone.net.",
+            "dns3.p08.nsone.net.",
+            "dns4.p08.nsone.net.",
+            "ns-1283.awsdns-32.org.",
+            "ns-1707.awsdns-21.co.uk.",
+            "ns-421.awsdns-52.com.",
+            "ns-520.awsdns-01.net."
+        ],
+        "mail_exchangers": [
+            "0 github-com.mail.protection.outlook.com."
+        ],
+        "txt_records": [
+            "00Dd0000000hHE0=1TBKg000000TN2r",
+            "MS=6BF03E6AF5CB689E315FB6199603BABF2C88D805",
+            "MS=ms44452932",
+            "MS=ms58704441",
+            "TAILSCALE-xOzoDvFUzZr5YYVCQFuD",
+            "adobe-idp-site-verification=b92c9e999aef825edc36e0a3d847d2dbad5b2fc0e05c79ddd7a16139b48ecf4b",
+            "anthropic-domain-verification-4az7qn=if8YWuRRqwLycGJDooumzHtxm",
+            "apple-domain-verification=RyQhdzTl6Z6x8ZP4",
+            "atlassian-domain-verification=jjgw98AKv2aeoYFxiL/VFaoyPkn3undEssTRuMg6C/3Fp/iqhkV4HVV7WjYlVeF8",
+            "calendly-site-verification=at0DQARi7IZvJtXQAWhMqpmIzpvoBNF7aam5VKKxP",
+            "cursor-domain-verification-gtfwmt=1rfLOtiTngX5QSxD5HvNKTvm3",
+            "docusign=087098e3-3d46-47b7-9b4e-8a23028154cd",
+            "facebook-domain-verification=39xu4jzl7roi7x0n93ldkxjiaarx50",
+            "google-site-verification=82Le34Flgtd15ojYhHlGF_6g72muSjamlMVThBOJpks",
+            "google-site-verification=UTM-3akMgubp6tQtgEuAkYNYLyYAvpTnnSrDMWoDR3o",
+            "jamf-site-verification=XtaPNIYghF_e_xRDI8CjgQ",
+            "krisp-domain-verification=ZlyiK7XLhnaoUQb2hpak1PLY7dFkl1WE",
+            "loom-site-verification=f3787154f1154b7880e720a511ea664d",
+            "miro-verification=d2e174fdb00c71e0bcf58f8e58c3da2dd80dcfa9",
+            "openai-domain-verification=dv-3nh33eQwdkotMIAzLrIDVZo1",
+            "serval-domain-verification-ydryhj=qbkiEakpwEpTvHh5fIiCqtaue",
+            "shopify-verification-code=t1YPwcmvnxZyBycaCpk1MPyWoFs72o",
+            "stripe-verification=f88ef17321660a01bab1660454192e014defa29ba7b8de9633c69d6b4912217f",
+            "v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.227.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all"
+        ],
+        "spf_records": [
+            "v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.227.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all"
+        ],
+        "dmarc_records": [
+            "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
+        ],
+        "findings": [
+            {
+                "check": "spf-record",
+                "status": "OK",
+                "severity": "LOW",
+                "note": "SPF record found.",
+                "evidence": "v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.227.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all"
+            },
+            {
+                "check": "dmarc-policy",
+                "status": "OK",
+                "severity": "LOW",
+                "note": "DMARC policy is enforcement-oriented.",
+                "evidence": "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
+            }
+        ]
+    },
+    "dns_validation": [],
+    "service_validation": [],
     "content_discovery": [],
     "wordlist_discovery": {
         "candidates": [],

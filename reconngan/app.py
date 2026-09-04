@@ -48,6 +48,7 @@ from .reporting import (
 
     print_tls_info,
     print_dns_resolutions,
+    print_dns_intelligence,
     print_service_probes,
     print_dns_records,
 
@@ -96,7 +97,9 @@ from .service_recon import (
 )
 from .dns_recon import (
     DEFAULT_DNS_RECORD_TYPES,
+    DNS_INTELLIGENCE_QUERY_COUNT,
     build_target_hostname_candidate,
+    collect_dns_intelligence,
     merge_hostname_candidates,
     query_dns_records,
     resolve_hostname_candidates,
@@ -226,6 +229,7 @@ def main() -> int:
 
     dns_records = []
     dns_resolutions = []
+    dns_intelligence = None
     service_probes = []
 
 
@@ -419,7 +423,7 @@ def main() -> int:
         ) as progress:
             task_id = progress.add_task(
                 "DNS records",
-                total=len(DEFAULT_DNS_RECORD_TYPES),
+                total=DNS_INTELLIGENCE_QUERY_COUNT,
             )
 
             def update_dns_records_progress(
@@ -436,13 +440,15 @@ def main() -> int:
                     ),
                 )
 
-            dns_records = query_dns_records(
+            dns_intelligence = collect_dns_intelligence(
                 hostname=target_hostname,
                 timeout=args.timeout,
                 progress_callback=(
                     update_dns_records_progress
                 ),
             )
+
+            dns_records = dns_intelligence.records
 
         dns_records_elapsed = (
             time.perf_counter()
@@ -453,11 +459,15 @@ def main() -> int:
             dns_records
         )
 
+        print_dns_intelligence(
+            dns_intelligence
+        )
+
         console.print(
             "\n[green][+] DNS records "
             "completed.[/green] "
             f"[dim]"
-            f"{len(DEFAULT_DNS_RECORD_TYPES)} type(s) "
+           f"{DNS_INTELLIGENCE_QUERY_COUNT} query step(s) "
             f"in {dns_records_elapsed:.2f}s"
             f"[/dim]"
         )
@@ -1036,6 +1046,7 @@ def main() -> int:
             hostname_candidates=hostname_candidates,
 
             dns_records=dns_records,
+            dns_intelligence=dns_intelligence,
             dns_resolutions=dns_resolutions,
             service_probes=service_probes,
             findings=findings,

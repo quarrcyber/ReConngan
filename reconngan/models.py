@@ -138,7 +138,28 @@ class DNSRecord:
     values: list[str]
     error: str | None
 
+@dataclass
+class DNSFinding:
+    check: str
+    status: str
+    severity: str
+    note: str
+    evidence: str
 
+
+@dataclass
+class DNSIntelligence:
+    hostname: str
+    records: list[DNSRecord]
+
+    cname_chain: list[str]
+    nameservers: list[str]
+    mail_exchangers: list[str]
+    txt_records: list[str]
+    spf_records: list[str]
+    dmarc_records: list[str]
+
+    findings: list[DNSFinding]
 
 
 

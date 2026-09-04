@@ -27,12 +27,14 @@ from .models import (
     TLSResult,
     DNSRecord,
     DNSResolution,
+    DNSIntelligence,
 )
 from .models import (
     ContentProbe,
     HostnameCandidate,
     TLSResult,
     DNSResolution,
+    DNSIntelligence,
     HostServiceProbe,
 )
 console = Console()
@@ -307,6 +309,7 @@ def build_report_data(
     hostname_candidates: list[HostnameCandidate],    
 
     dns_records: list[DNSRecord],
+    dns_intelligence: DNSIntelligence | None,
     dns_resolutions: list[DNSResolution],
 
     service_probes: list[HostServiceProbe],
@@ -383,7 +386,11 @@ def build_report_data(
             asdict(record)
             for record in dns_records
         ],
-
+        "dns_intelligence": (
+            asdict(dns_intelligence)
+            if dns_intelligence is not None
+            else None
+        ),
         "dns_validation": [
             asdict(result)
             for result in dns_resolutions
@@ -852,7 +859,136 @@ def print_dns_records(
     console.print(
         table
     )
+#dns intelligence
+def print_dns_intelligence(
+    intelligence: DNSIntelligence | None,
+) -> None:
+    if intelligence is None:
+        return
 
+    table = Table(
+        title="DNS Intelligence",
+        show_header=False,
+    )
+
+    table.add_column(
+        "Field",
+        style="bold",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Value",
+        overflow="fold",
+    )
+
+    table.add_row(
+        "Hostname",
+        escape(intelligence.hostname),
+    )
+
+    table.add_row(
+        "CNAME Chain",
+        (
+            escape(" -> ".join(intelligence.cname_chain))
+            if intelligence.cname_chain
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Nameservers",
+        (
+            escape(", ".join(intelligence.nameservers))
+            if intelligence.nameservers
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Mail Exchangers",
+        (
+            escape(", ".join(intelligence.mail_exchangers))
+            if intelligence.mail_exchangers
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "SPF",
+        (
+            escape(" | ".join(intelligence.spf_records))
+            if intelligence.spf_records
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "DMARC",
+        (
+            escape(" | ".join(intelligence.dmarc_records))
+            if intelligence.dmarc_records
+            else "-"
+        ),
+    )
+
+    console.print()
+    console.print(table)
+
+    if not intelligence.findings:
+        return
+
+    findings_table = Table(
+        title="DNS Findings",
+        show_header=True,
+        header_style="bold",
+    )
+
+    findings_table.add_column(
+        "Check",
+        no_wrap=True,
+    )
+
+    findings_table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    findings_table.add_column(
+        "Severity",
+        no_wrap=True,
+    )
+
+    findings_table.add_column(
+        "Evidence",
+        overflow="fold",
+    )
+
+    for finding in intelligence.findings:
+        status_color = status_style(
+            finding.status
+        )
+
+        severity_color = severity_style(
+            finding.severity
+        )
+
+        findings_table.add_row(
+            finding.check,
+            (
+                f"[{status_color}]"
+                f"{finding.status}"
+                f"[/{status_color}]"
+            ),
+            (
+                f"[{severity_color}]"
+                f"{finding.severity}"
+                f"[/{severity_color}]"
+            ),
+            escape(finding.evidence),
+        )
+
+    console.print(findings_table)
 
 
 def print_service_probes(
