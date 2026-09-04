@@ -110,6 +110,11 @@ from .correlation import (
     correlate_recon_evidence,
 )
 
+
+from .branding import (
+    print_recoongan_banner,
+)
+
 #console
 console = Console()
 
@@ -117,6 +122,10 @@ console = Console()
 def main() -> int:
     scan_started = time.perf_counter()
     args = parse_args()
+
+    print_recoongan_banner(
+        console
+    )
 
     correlation_requested = (
         args.correlate

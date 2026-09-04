@@ -268,7 +268,6 @@ def parse_args():
     # =========================================================
     # NETWORK OPTIONS
     # =========================================================
-
     network_group = parser.add_argument_group(
         "Network options"
     )
