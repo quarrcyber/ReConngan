@@ -262,7 +262,7 @@ def parse_args():
         "-v",
         "--version",
         action="version",
-        version="ReConngan 0.2.0",
+        version="ReConngan 0.2.1",
     )
 
     # =========================================================

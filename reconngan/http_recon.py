@@ -1,4 +1,5 @@
 import httpx
+import re
 
 from http.cookies import (
     SimpleCookie,
@@ -365,6 +366,194 @@ def _add_indicator(
             evidence=normalized_evidence,
         )
     )
+#version leakage
+SERVER_PRODUCT_VERSION_RE = re.compile(
+    r"(?P<product>[A-Za-z][A-Za-z0-9_.+-]*)"
+    r"/"
+    r"(?P<version>[0-9][A-Za-z0-9_.:+~-]*)"
+)
+
+VERSION_LIKE_RE = re.compile(
+    r"\b[0-9]+(?:\.[0-9A-Za-z_-]+)+\b"
+)
+
+PARENTHESIZED_DETAIL_RE = re.compile(
+    r"\((?P<detail>[^)]{2,200})\)"
+)
+
+SENSITIVE_STACK_MARKERS = (
+    "ubuntu",
+    "debian",
+    "centos",
+    "red hat",
+    "rhel",
+    "alpine",
+    "freebsd",
+    "openssl",
+    "php",
+    "python",
+    "perl",
+    "mod_",
+    "passenger",
+    "phusion",
+    "gunicorn",
+    "uvicorn",
+    "werkzeug",
+    "tomcat",
+    "jetty",
+    "wildfly",
+    "jboss",
+    "iis",
+    "asp.net",
+    "express",
+    "node",
+)
+
+
+def _extract_product_versions(
+    value: str,
+) -> list[str]:
+    """Extract product/version tokens from a header value."""
+
+    matches: list[str] = []
+
+    for match in SERVER_PRODUCT_VERSION_RE.finditer(
+        value
+    ):
+        product = match.group(
+            "product"
+        )
+
+        version = match.group(
+            "version"
+        )
+
+        matches.append(
+            f"{product}/{version}"
+        )
+
+    return matches
+
+
+def _extract_parenthesized_details(
+    value: str,
+) -> list[str]:
+    """Extract parenthesized platform/module details."""
+
+    details: list[str] = []
+
+    for match in PARENTHESIZED_DETAIL_RE.finditer(
+        value
+    ):
+        detail = match.group(
+            "detail"
+        ).strip()
+
+        if detail:
+            details.append(
+                detail
+            )
+
+    return details
+
+
+def _contains_stack_detail(
+    value: str,
+) -> bool:
+    lowered = value.lower()
+
+    return any(
+        marker in lowered
+        for marker in SENSITIVE_STACK_MARKERS
+    )
+
+
+def _has_version_like_value(
+    value: str,
+) -> bool:
+    return bool(
+        VERSION_LIKE_RE.search(
+            value
+        )
+    )
+
+
+def _server_header_has_version_leakage(
+    value: str,
+) -> bool:
+    if _extract_product_versions(
+        value
+    ):
+        return True
+
+    if _contains_stack_detail(
+        value
+    ) and _has_version_like_value(
+        value
+    ):
+        return True
+
+    return False
+
+
+def _server_header_has_stack_detail(
+    value: str,
+) -> bool:
+    if _extract_parenthesized_details(
+        value
+    ):
+        return True
+
+    return _contains_stack_detail(
+        value
+    )
+
+
+def _server_version_severity(
+    value: str,
+) -> str:
+    if _server_header_has_stack_detail(
+        value
+    ):
+        return "HIGH"
+
+    return "MEDIUM"
+
+
+def _server_version_evidence(
+    value: str,
+) -> str:
+    product_versions = _extract_product_versions(
+        value
+    )
+
+    details = _extract_parenthesized_details(
+        value
+    )
+
+    evidence_parts: list[str] = []
+
+    if product_versions:
+        evidence_parts.append(
+            "products="
+            + ", ".join(product_versions)
+        )
+
+    if details:
+        evidence_parts.append(
+            "details="
+            + " | ".join(details)
+        )
+
+    if not evidence_parts:
+        evidence_parts.append(
+            value
+        )
+
+    return "; ".join(
+        evidence_parts
+    )
+
 
 def _collect_header_technology_hints(
     response: httpx.Response,
@@ -385,6 +574,32 @@ def _collect_header_technology_hints(
             evidence=server,
         )
 
+        product_versions = _extract_product_versions(
+            server
+        )
+
+        for product_version in product_versions:
+            _add_indicator(
+                indicators,
+                category="server",
+                name="Server product/version",
+                confidence="HIGH",
+                evidence=product_version,
+            )
+
+        details = _extract_parenthesized_details(
+            server
+        )
+
+        for detail in details:
+            _add_indicator(
+                indicators,
+                category="server",
+                name="Server platform/module detail",
+                confidence="MEDIUM",
+                evidence=detail,
+            )
+
     powered_by = _header_value(
         response,
         "X-Powered-By",
@@ -403,6 +618,40 @@ def _collect_header_technology_hints(
         response,
         "Via",
     )
+
+    version_leak_headers = {
+        "X-AspNet-Version": "ASP.NET version",
+        "X-AspNetMvc-Version": "ASP.NET MVC version",
+        "X-Generator": "Generator version",
+        "X-Drupal-Cache": "Drupal indicator",
+        "X-Runtime": "Runtime indicator",
+        "X-Rack-Cache": "Rack cache indicator",
+    }
+
+    for header_name, name in version_leak_headers.items():
+        value = _header_value(
+            response,
+            header_name,
+        )
+
+        if value:
+            confidence = (
+                "HIGH"
+                if _has_version_like_value(
+                    value
+                )
+                else "MEDIUM"
+            )
+
+            _add_indicator(
+                indicators,
+                category="technology",
+                name=name,
+                confidence=confidence,
+                evidence=(
+                    f"{header_name}: {value}"
+                ),
+            )
 
     if via:
         _add_indicator(
@@ -747,36 +996,114 @@ def _build_http_intelligence_findings(
             )
         )
 
-        if any(
-            character.isdigit()
-            for character in server
+        if _server_header_has_version_leakage(
+            server
         ):
             findings.append(
                 HTTPFinding(
                     check="server-version-leakage",
                     status="WEAK",
-                    severity="MEDIUM",
-                    note="Server header appears to expose version information.",
+                    severity=_server_version_severity(
+                        server
+                    ),
+                    note=(
+                        "Server header exposes product, "
+                        "version, platform, or module details."
+                    ),
+                    evidence=_server_version_evidence(
+                        server
+                    ),
+                )
+            )
+
+        elif _server_header_has_stack_detail(
+            server
+        ):
+            findings.append(
+                HTTPFinding(
+                    check="server-stack-detail",
+                    status="INFO",
+                    severity="LOW",
+                    note=(
+                        "Server header exposes stack or "
+                        "platform detail without a clear version."
+                    ),
                     evidence=server,
                 )
             )
 
+##
     powered_by = _header_value(
         response,
         "X-Powered-By",
     )
 
     if powered_by:
+        severity = (
+            "HIGH"
+            if _has_version_like_value(
+                powered_by
+            )
+            else "MEDIUM"
+        )
+
+        check = (
+            "powered-by-version-leakage"
+            if _has_version_like_value(
+                powered_by
+            )
+            else "powered-by-header"
+        )
+
         findings.append(
             HTTPFinding(
-                check="powered-by-header",
+                check=check,
                 status="WEAK",
-                severity="MEDIUM",
-                note="X-Powered-By exposes backend technology information.",
+                severity=severity,
+                note=(
+                    "X-Powered-By exposes backend "
+                    "technology information."
+                ),
                 evidence=powered_by,
             )
         )
+    version_leak_headers = {
+        "X-AspNet-Version": "ASP.NET runtime version is exposed.",
+        "X-AspNetMvc-Version": "ASP.NET MVC version is exposed.",
+        "X-Generator": "Application generator metadata is exposed.",
+    }
 
+    for header_name, note in version_leak_headers.items():
+        value = _header_value(
+            response,
+            header_name,
+        )
+
+        if not value:
+            continue
+
+        severity = (
+            "HIGH"
+            if _has_version_like_value(
+                value
+            )
+            else "MEDIUM"
+        )
+
+        findings.append(
+            HTTPFinding(
+                check="framework-version-leakage",
+                status="WEAK",
+                severity=severity,
+                note=note,
+                evidence=(
+                    f"{header_name}: {value}"
+                ),
+            )
+        )
+
+
+##
     cors_origin = _header_value(
         response,
         "Access-Control-Allow-Origin",
