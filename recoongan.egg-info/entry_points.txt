@@ -1,0 +1,2 @@
+[console_scripts]
+recoongan = recoongan.app:main

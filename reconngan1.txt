@@ -559,9 +559,9 @@ def write_json_report(
 def parse_args():
 
     parser = argparse.ArgumentParser(
-        prog="reconngan",
+        prog="recoongan",
         description=(
-            "ReConngan - HTTP security headers "
+            "ReCoongan - HTTP security headers "
             "reconnaissance scanner"
         ),
     )
@@ -574,7 +574,7 @@ def parse_args():
     parser.add_argument(
         "--version",
         action="version",
-        version="ReConngan 0.1.1",
+        version="ReCoongan 0.1.1",
     )
     parser.add_argument(
         "--timeout",

@@ -901,7 +901,7 @@ async def _build_soft404_baselines(
         )
 
         random_path = (
-            f"/__reconngan_404_{token}"
+            f"/__recoongan_404_{token}"
         )
 
         url = urljoin(

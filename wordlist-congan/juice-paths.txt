@@ -25,4 +25,4 @@ security.txt
 backup
 admin
 test
-nonexistent-reconngan-302
+nonexistent-recoongan-302
