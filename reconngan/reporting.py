@@ -28,6 +28,7 @@ from .models import (
     DNSRecord,
     DNSResolution,
     DNSIntelligence,
+    HTTPIntelligence,
 )
 from .models import (
     ContentProbe,
@@ -292,6 +293,7 @@ def build_report_data(
     final_url: str,
     status_code: int,
     metadata: HttpMetadata,
+    http_intelligence: HTTPIntelligence | None,
     redirect_chain: list[RedirectHop],
     findings: list[Finding],
     cookies: list[CookieInfo],
@@ -322,6 +324,11 @@ def build_report_data(
         "final_url": final_url,
         "status_code": status_code,
         "http": asdict(metadata),
+        "http_intelligence": (
+            asdict(http_intelligence)
+            if http_intelligence is not None
+            else None
+        ),
         "tls": (
             asdict(tls_result)
             if tls_result is not None
@@ -478,6 +485,226 @@ def print_http_metadata(
     )
 
     console.print(table)
+
+def print_http_intelligence(
+    intelligence: HTTPIntelligence | None,
+) -> None:
+    if intelligence is None:
+        return
+
+    table = Table(
+        title="HTTP Intelligence",
+        show_header=False,
+    )
+
+    table.add_column(
+        "Field",
+        style="bold",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Value",
+        overflow="fold",
+    )
+
+    table.add_row(
+        "Final URL",
+        escape(intelligence.final_url),
+    )
+
+    table.add_row(
+        "Status",
+        str(intelligence.status_code),
+    )
+
+    table.add_row(
+        "Server",
+        (
+            escape(intelligence.server)
+            if intelligence.server
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Powered By",
+        (
+            escape(intelligence.powered_by)
+            if intelligence.powered_by
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Via",
+        (
+            escape(intelligence.via)
+            if intelligence.via
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Cache",
+        (
+            escape(intelligence.cache_status)
+            if intelligence.cache_status
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Content-Type",
+        (
+            escape(intelligence.content_type)
+            if intelligence.content_type
+            else "-"
+        ),
+    )
+
+    table.add_row(
+        "Technology Hints",
+        str(len(intelligence.technology_hints)),
+    )
+
+    table.add_row(
+        "Framework Indicators",
+        str(len(intelligence.framework_indicators)),
+    )
+
+    table.add_row(
+        "API Indicators",
+        str(len(intelligence.api_indicators)),
+    )
+
+    table.add_row(
+        "Auth Surface",
+        str(len(intelligence.auth_surface)),
+    )
+
+    table.add_row(
+        "Metadata",
+        str(len(intelligence.metadata)),
+    )
+
+    console.print()
+    console.print(table)
+
+    indicator_groups = (
+        (
+            "Technology Hints",
+            intelligence.technology_hints,
+        ),
+        (
+            "Framework Indicators",
+            intelligence.framework_indicators,
+        ),
+        (
+            "API Indicators",
+            intelligence.api_indicators,
+        ),
+        (
+            "Authentication Surface",
+            intelligence.auth_surface,
+        ),
+        (
+            "Interesting Metadata",
+            intelligence.metadata,
+        ),
+    )
+
+    for title, indicators in indicator_groups:
+        if not indicators:
+            continue
+
+        indicators_table = Table(
+            title=title,
+            show_header=True,
+            header_style="bold",
+        )
+
+        indicators_table.add_column(
+            "Name",
+            no_wrap=True,
+        )
+
+        indicators_table.add_column(
+            "Confidence",
+            no_wrap=True,
+        )
+
+        indicators_table.add_column(
+            "Evidence",
+            overflow="fold",
+        )
+
+        for indicator in indicators:
+            indicators_table.add_row(
+                escape(indicator.name),
+                escape(indicator.confidence),
+                escape(indicator.evidence),
+            )
+
+        console.print(indicators_table)
+
+    if not intelligence.findings:
+        return
+
+    findings_table = Table(
+        title="HTTP Intelligence Findings",
+        show_header=True,
+        header_style="bold",
+    )
+
+    findings_table.add_column(
+        "Check",
+        no_wrap=True,
+    )
+
+    findings_table.add_column(
+        "Status",
+        no_wrap=True,
+    )
+
+    findings_table.add_column(
+        "Severity",
+        no_wrap=True,
+    )
+
+    findings_table.add_column(
+        "Evidence",
+        overflow="fold",
+    )
+
+    for finding in intelligence.findings:
+        status_color = status_style(
+            finding.status
+        )
+
+        severity_color = severity_style(
+            finding.severity
+        )
+
+        findings_table.add_row(
+            escape(finding.check),
+            (
+                f"[{status_color}]"
+                f"{finding.status}"
+                f"[/{status_color}]"
+            ),
+            (
+                f"[{severity_color}]"
+                f"{finding.severity}"
+                f"[/{severity_color}]"
+            ),
+            escape(finding.evidence),
+        )
+
+    console.print(findings_table)
+
+
+
 def print_tls_info(
     result: TLSResult,
     hostname_candidates: list[HostnameCandidate],

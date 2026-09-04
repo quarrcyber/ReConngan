@@ -33,6 +33,7 @@ from .reporting import (
     console,
     print_target_info,
     print_http_metadata,
+    print_http_intelligence,
     print_http_cookies,
     print_cookie_findings,
     print_redirect_chain,
@@ -51,7 +52,6 @@ from .reporting import (
     print_dns_intelligence,
     print_service_probes,
     print_dns_records,
-
 )
 from .network import (
     normalize_url,
@@ -61,6 +61,7 @@ from .network import (
 from .cli import parse_args
 from .http_recon import (
     collect_http_metadata,
+    collect_http_intelligence,
     collect_http_cookies,
     collect_redirect_chain,
     analyze_cookie_security,
@@ -165,6 +166,15 @@ def main() -> int:
     print_http_metadata(
         http_metadata
     )
+    if args.http_intel or args.all_modules:
+        http_intelligence = collect_http_intelligence(
+            response
+        )
+
+        print_http_intelligence(
+            http_intelligence
+        )
+
 
     # =========================================================
     # 4. CORE: SECURITY HEADERS
@@ -215,6 +225,8 @@ def main() -> int:
     wordlist_candidates = []
     wordlist_results = []
 
+
+    http_intelligence = None
     tls_result = None
 
     target_candidate = build_target_hostname_candidate(
@@ -1031,6 +1043,7 @@ def main() -> int:
             final_url=str(response.url),
             status_code=response.status_code,
             metadata=http_metadata,
+            http_intelligence=http_intelligence,
             redirect_chain=redirect_chain,
             security_txt=security_txt_info,
             cookies=cookies,

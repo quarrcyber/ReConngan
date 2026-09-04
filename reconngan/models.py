@@ -47,6 +47,46 @@ class CookieFinding:
     evidence: str
 
 @dataclass
+class HTTPIndicator:
+    category: str
+    name: str
+    confidence: str
+    evidence: str
+
+
+@dataclass
+class HTTPFinding:
+    check: str
+    status: str
+    severity: str
+    note: str
+    evidence: str
+
+
+@dataclass
+class HTTPIntelligence:
+    url: str
+    final_url: str
+    status_code: int
+
+    server: str | None
+    powered_by: str | None
+    via: str | None
+
+    cache_status: str | None
+    content_type: str | None
+
+    technology_hints: list[HTTPIndicator]
+    framework_indicators: list[HTTPIndicator]
+    api_indicators: list[HTTPIndicator]
+    auth_surface: list[HTTPIndicator]
+    metadata: list[HTTPIndicator]
+
+    findings: list[HTTPFinding]
+
+
+
+@dataclass
 class RedirectHop:
     url: str
     status_code: int

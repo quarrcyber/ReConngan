@@ -262,7 +262,7 @@ def parse_args():
         "-v",
         "--version",
         action="version",
-        version="ReConngan 0.1.8",
+        version="ReConngan 0.2.0",
     )
 
     # =========================================================
@@ -370,6 +370,16 @@ def parse_args():
         help=(
             "Show the HTTP redirect chain from the "
             "original target to the final URL."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--http-intel",
+        dest="http_intel",
+        action="store_true",
+        help=(
+            "Inspect HTTP technology hints, API indicators, "
+            "authentication surface, and interesting metadata."
         ),
     )
 
