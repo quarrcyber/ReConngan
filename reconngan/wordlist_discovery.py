@@ -5,7 +5,8 @@ import hashlib
 import secrets
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
 from pathlib import Path
 from urllib.parse import (
     urljoin,
@@ -24,7 +25,6 @@ from .models import (
     ContentProbe,
     URLCandidate,
 )
-
 
 MAX_WORDLIST_ENTRIES = 50_000
 
@@ -51,6 +51,7 @@ REDIRECT_STATUS_CODES = frozenset(
 )
 
 MIN_RESPONSE_BYTES = 1_024
+EMPTY_SUCCESS_MAX_BYTES = 0
 
 DEFAULT_WORDLIST: tuple[str, ...] = (
     "admin",
@@ -87,7 +88,6 @@ ProgressCallback = Callable[
     None,
 ]
 
-
 class WordlistLoadError(ValueError):
     """Raised when a wordlist cannot be loaded."""
 
@@ -102,14 +102,22 @@ class PathDiscoveryInterrupted(KeyboardInterrupt):
         super().__init__(
             "Path discovery interrupted by user"
         )
-        self.results = list(results)
+
+        self.results = list(
+            results
+        )
+
 
 
 @dataclass(frozen=True)
 class PathDiscoveryConfig:
     timeout: float = 10.0
     concurrency: int = 40
+    rate_limit: float | None = None
     max_response_bytes: int = 16_384
+    min_response_size: int | None = None
+    max_response_size: int | None = None
+    depth_limit: int = 0
     baseline_samples: int = 3
     found_statuses: frozenset[int] = FOUND_STATUS_CODES
 
@@ -132,6 +140,72 @@ class Soft404Baseline:
     normalized_body: str
     body_hash: str
 
+@dataclass
+class AsyncRateLimiter:
+    """Coordinate request pacing across concurrent workers."""
+
+    requests_per_second: float | None
+    _lock: asyncio.Lock = field(
+        init=False,
+        repr=False,
+    )
+    _next_allowed_at: float = field(
+        default=0.0,
+        init=False,
+        repr=False,
+    )
+
+    def __post_init__(
+        self,
+    ) -> None:
+        self._lock = asyncio.Lock()
+
+        if (
+            self.requests_per_second is not None
+            and self.requests_per_second <= 0
+        ):
+            raise ValueError(
+                "requests_per_second must be greater than 0"
+            )
+
+    async def wait(
+        self,
+    ) -> None:
+        if self.requests_per_second is None:
+            return
+
+        interval = (
+            1.0
+            / self.requests_per_second
+        )
+
+        loop = asyncio.get_running_loop()
+
+        async with self._lock:
+            now = loop.time()
+
+            allowed_at = max(
+                now,
+                self._next_allowed_at,
+            )
+
+            self._next_allowed_at = (
+                allowed_at
+                + interval
+            )
+
+            delay = (
+                allowed_at
+                - now
+            )
+
+        if delay > 0:
+            await asyncio.sleep(
+                min(
+                    delay,
+                    5.0,
+                )
+            )
 
 def _normalize_wordlist_entry(
     raw_entry: str,
@@ -268,6 +342,123 @@ def load_wordlist(
         source,
     )
 
+def _path_has_extension(
+    path: str,
+) -> bool:
+    parsed = urlsplit(
+        path
+    )
+
+    final_segment = (
+        parsed.path
+        .rstrip("/")
+        .rsplit(
+            "/",
+            maxsplit=1,
+        )[-1]
+    )
+
+    if not final_segment:
+        return False
+
+    if final_segment.startswith(
+        "."
+    ):
+        return True
+
+    return "." in final_segment
+
+def _path_is_extension_candidate(
+    path: str,
+) -> bool:
+    parsed = urlsplit(
+        path
+    )
+
+    if parsed.query:
+        return False
+
+    if parsed.path.endswith(
+        "/"
+    ):
+        return False
+
+    if _path_has_extension(
+        path
+    ):
+        return False
+
+    final_segment = (
+        parsed.path
+        .rsplit(
+            "/",
+            maxsplit=1,
+        )[-1]
+    )
+
+    if not final_segment:
+        return False
+
+    return True
+
+def expand_wordlist_entries(
+    entries: list[str],
+    extensions: tuple[str, ...],
+) -> list[str]:
+    """Expand extensionless wordlist paths with file extensions."""
+
+    if not extensions:
+        return entries
+
+    expanded_entries: list[str] = []
+    seen: set[str] = set()
+
+    for entry in entries:
+        if entry not in seen:
+            seen.add(
+                entry
+            )
+
+            expanded_entries.append(
+                entry
+            )
+
+        if not _path_is_extension_candidate(
+            entry
+        ):
+            continue
+
+        parsed = urlsplit(
+            entry
+        )
+
+        for extension in extensions:
+            expanded_path = (
+                f"{parsed.path}.{extension}"
+            )
+
+            expanded_entry = urlunsplit(
+                (
+                    "",
+                    "",
+                    expanded_path,
+                    "",
+                    "",
+                )
+            )
+
+            if expanded_entry in seen:
+                continue
+
+            seen.add(
+                expanded_entry
+            )
+
+            expanded_entries.append(
+                expanded_entry
+            )
+
+    return expanded_entries
 
 def _origin_url(
     base_url: str,
@@ -379,6 +570,180 @@ def merge_url_candidates(
 
     return merged
 
+def _candidate_path_suffixes(
+    base_url: str,
+    candidates: list[URLCandidate],
+) -> list[str]:
+    """Extract relative path suffixes from root wordlist candidates."""
+
+    origin = _origin_url(
+        base_url
+    )
+
+    parsed_origin = urlsplit(
+        origin
+    )
+
+    suffixes: list[str] = []
+    seen: set[str] = set()
+
+    for candidate in candidates:
+        parsed_candidate = urlsplit(
+            candidate.url
+        )
+
+        if (
+            parsed_candidate.scheme
+            != parsed_origin.scheme
+            or parsed_candidate.netloc.lower()
+            != parsed_origin.netloc.lower()
+        ):
+            continue
+
+        suffix = parsed_candidate.path.lstrip(
+            "/"
+        )
+
+        if not suffix:
+            continue
+
+        if parsed_candidate.query:
+            suffix = (
+                f"{suffix}?{parsed_candidate.query}"
+            )
+
+        if suffix in seen:
+            continue
+
+        seen.add(
+            suffix
+        )
+
+        suffixes.append(
+            suffix
+        )
+
+    return suffixes
+
+def _result_directory_url(
+    result: ContentProbe,
+    origin: str,
+) -> str | None:
+    """Return a same-origin directory URL suitable for recursion."""
+
+    parsed_origin = urlsplit(
+        origin
+    )
+
+    parsed_result = urlsplit(
+        result.url
+    )
+
+    if (
+        parsed_result.scheme
+        != parsed_origin.scheme
+        or parsed_result.netloc.lower()
+        != parsed_origin.netloc.lower()
+    ):
+        return None
+
+    if parsed_result.path.endswith(
+        "/"
+    ):
+        return urlunsplit(
+            (
+                parsed_result.scheme,
+                parsed_result.netloc,
+                parsed_result.path,
+                "",
+                "",
+            )
+        )
+
+    if (
+        result.status_code in REDIRECT_STATUS_CODES
+        and result.redirect_to
+    ):
+        redirect_url = urljoin(
+            result.url,
+            result.redirect_to,
+        )
+
+        parsed_redirect = urlsplit(
+            redirect_url
+        )
+
+        if (
+            parsed_redirect.scheme
+            == parsed_origin.scheme
+            and parsed_redirect.netloc.lower()
+            == parsed_origin.netloc.lower()
+            and parsed_redirect.path.endswith("/")
+        ):
+            return urlunsplit(
+                (
+                    parsed_redirect.scheme,
+                    parsed_redirect.netloc,
+                    parsed_redirect.path,
+                    "",
+                    "",
+                )
+            )
+
+    return None
+
+def _build_recursive_candidates(
+    directory_urls: list[str],
+    path_suffixes: list[str],
+    source: str,
+    depth: int,
+    seen_urls: set[str],
+) -> list[URLCandidate]:
+    """Build next-level candidates under discovered directories."""
+
+    candidates: list[URLCandidate] = []
+
+    for directory_url in directory_urls:
+        parsed_directory = urlsplit(
+            directory_url
+        )
+
+        for suffix in path_suffixes:
+            child_url = urljoin(
+                directory_url,
+                suffix,
+            )
+
+            parsed_child = urlsplit(
+                child_url
+            )
+
+            if (
+                parsed_child.scheme
+                != parsed_directory.scheme
+                or parsed_child.netloc.lower()
+                != parsed_directory.netloc.lower()
+            ):
+                continue
+
+            if child_url in seen_urls:
+                continue
+
+            seen_urls.add(
+                child_url
+            )
+
+            candidates.append(
+                URLCandidate(
+                    url=child_url,
+                    source=(
+                        f"{source}:depth-{depth}"
+                    ),
+                    same_host=True,
+                )
+            )
+
+    return candidates
 
 def _parse_content_length(
     value: str | None,
@@ -393,6 +758,20 @@ def _parse_content_length(
     except ValueError:
         return None
 
+def _effective_response_size(
+    sample: SampledHTTPResponse,
+) -> int:
+    """Return the best available response size for filtering."""
+
+    if sample.content_length is not None:
+        return sample.content_length
+
+    return len(
+        sample.body_text.encode(
+            "utf-8",
+            errors="ignore",
+        )
+    )
 
 def _hash_bytes(
     data: bytes,
@@ -477,19 +856,44 @@ async def _request_sample(
             ),
         )
 
+async def _request_sample_with_deadline(
+    client: httpx.AsyncClient,
+    url: str,
+    config: PathDiscoveryConfig,
+) -> SampledHTTPResponse:
+    """Request a sampled response with a hard asyncio deadline."""
+
+    return await asyncio.wait_for(
+        _request_sample(
+            client=client,
+            url=url,
+            max_response_bytes=(
+                config.max_response_bytes
+            ),
+        ),
+        timeout=(
+            config.timeout
+            + 1.0
+        ),
+    )
 
 async def _build_soft404_baselines(
     client: httpx.AsyncClient,
     base_url: str,
     config: PathDiscoveryConfig,
+    rate_limiter: AsyncRateLimiter | None = None,
 ) -> list[Soft404Baseline]:
+    """Build soft-404 baselines without blocking path discovery."""
+
+    _ = rate_limiter
+
     origin = _origin_url(
         base_url
     )
 
     baselines: list[Soft404Baseline] = []
 
-    for _ in range(
+    for _index in range(
         config.baseline_samples
     ):
         token = secrets.token_hex(
@@ -505,13 +909,18 @@ async def _build_soft404_baselines(
             random_path,
         )
 
-        sample = await _request_sample(
-            client=client,
-            url=url,
-            max_response_bytes=(
-                config.max_response_bytes
-            ),
-        )
+        try:
+            sample = await _request_sample_with_deadline(
+                client=client,
+                url=url,
+                config=config,
+            )
+
+        except (
+            httpx.HTTPError,
+            asyncio.TimeoutError,
+        ):
+            continue
 
         baselines.append(
             Soft404Baseline(
@@ -527,7 +936,6 @@ async def _build_soft404_baselines(
         )
 
     return baselines
-
 
 def _looks_like_soft404(
     sample: SampledHTTPResponse,
@@ -576,14 +984,66 @@ def _looks_like_soft404(
 
     return False
 
+def _response_size_allowed(
+    sample: SampledHTTPResponse,
+    config: PathDiscoveryConfig,
+) -> bool:
+    """Return whether response size passes configured filters."""
+
+    size = sample.content_length
+
+    if size is None:
+        return True
+
+    if (
+        config.min_response_size is not None
+        and size < config.min_response_size
+    ):
+        return False
+
+    if (
+        config.max_response_size is not None
+        and size > config.max_response_size
+    ):
+        return False
+
+    return True
+
+def _is_empty_success_noise(
+    sample: SampledHTTPResponse,
+) -> bool:
+    """Return whether a successful response is likely empty noise."""
+
+    if sample.status_code != 200:
+        return False
+
+    if sample.redirect_to:
+        return False
+
+    size = _effective_response_size(
+        sample
+    )
+
+    if size > EMPTY_SUCCESS_MAX_BYTES:
+        return False
+
+    normalized_body = normalize_body(
+        sample.body_text
+    )
+
+    return not normalized_body
+
 
 async def _probe_path(
     client: httpx.AsyncClient,
     candidate: URLCandidate,
     baselines: list[Soft404Baseline],
     config: PathDiscoveryConfig,
+    rate_limiter: AsyncRateLimiter,
 ) -> ContentProbe | None:
     try:
+        await rate_limiter.wait()
+
         sample = await _request_sample(
             client=client,
             url=candidate.url,
@@ -598,6 +1058,17 @@ async def _probe_path(
     if (
         sample.status_code
         not in config.found_statuses
+    ):
+        return None
+
+    if _is_empty_success_noise(
+        sample
+    ):
+        return None
+
+    if not _response_size_allowed(
+        sample,
+        config,
     ):
         return None
 
@@ -622,12 +1093,118 @@ async def _probe_path(
     )
 
 
+async def _probe_candidate_batch(
+    client: httpx.AsyncClient,
+    candidates: list[URLCandidate],
+    baselines: list[Soft404Baseline],
+    config: PathDiscoveryConfig,
+    rate_limiter: AsyncRateLimiter,
+    progress_callback: ProgressCallback | None,
+    completed_count: int,
+    total_count: int,
+) -> tuple[list[ContentProbe], int]:
+    """Probe one batch of candidates with the configured workers."""
+
+    if not candidates:
+        return (
+            [],
+            completed_count,
+        )
+
+    results: list[ContentProbe] = []
+    completed = completed_count
+
+    queue: asyncio.Queue[
+        URLCandidate | None
+    ] = asyncio.Queue(
+        maxsize=config.concurrency * 4
+    )
+
+    async def worker() -> None:
+        nonlocal completed
+
+        while True:
+            candidate = await queue.get()
+
+            try:
+                if candidate is None:
+                    return
+
+                result: ContentProbe | None = None
+
+                try:
+                    result = await _probe_path(
+                        client=client,
+                        candidate=candidate,
+                        baselines=baselines,
+                        config=config,
+                        rate_limiter=rate_limiter,
+                    )
+                except asyncio.TimeoutError:
+                    result = None
+
+                if result is not None:
+                    results.append(
+                        result
+                    )
+
+                completed += 1
+
+                if progress_callback:
+                    progress_callback(
+                        completed,
+                        total_count,
+                        candidate.url,
+                    )
+
+            finally:
+                queue.task_done()
+
+    worker_count = min(
+        config.concurrency,
+        len(candidates),
+    )
+
+    workers = [
+        asyncio.create_task(
+            worker()
+        )
+        for _ in range(
+            worker_count
+        )
+    ]
+
+    for candidate in candidates:
+        await queue.put(
+            candidate
+        )
+
+    for _ in workers:
+        await queue.put(
+            None
+        )
+
+    await queue.join()
+
+    await asyncio.gather(
+        *workers
+    )
+
+    return (
+        results,
+        completed,
+    )
+
 async def discover_wordlist_paths_async(
     base_url: str,
     candidates: list[URLCandidate],
     timeout: float = 10.0,
     concurrency: int = 40,
+    rate_limit: float | None = None,
     max_response_bytes: int = 16_384,
+    min_response_size: int | None = None,
+    max_response_size: int | None = None,
+    depth_limit: int = 0,
     progress_callback: ProgressCallback | None = None,
 ) -> list[ContentProbe]:
     """Probe wordlist candidates concurrently and return only real paths."""
@@ -642,6 +1219,7 @@ async def discover_wordlist_paths_async(
         same_host_candidates
     )
 
+
     if not same_host_candidates:
         return []
 
@@ -651,10 +1229,21 @@ async def discover_wordlist_paths_async(
             1,
             concurrency,
         ),
+        rate_limit=rate_limit,
         max_response_bytes=max(
             MIN_RESPONSE_BYTES,
             max_response_bytes,
         ),
+        min_response_size=min_response_size,
+        max_response_size=max_response_size,
+        depth_limit=max(
+            0,
+            depth_limit,
+        ),
+
+    )
+    rate_limiter = AsyncRateLimiter(
+        config.rate_limit
     )
 
     results: list[ContentProbe] = []
@@ -684,100 +1273,159 @@ async def discover_wordlist_paths_async(
             )
 
         try:
-            baselines = (
-                await _build_soft404_baselines(
+            baselines = await asyncio.wait_for(
+                _build_soft404_baselines(
                     client=client,
                     base_url=base_url,
                     config=config,
+                    rate_limiter=rate_limiter,
+                ),
+                timeout=(
+                    config.timeout
+                    + 2.0
+                ),
+            )
+
+        except (
+            httpx.HTTPError,
+            asyncio.TimeoutError,
+        ):
+            baselines = []
+
+#
+        path_suffixes = _candidate_path_suffixes(
+            base_url,
+            same_host_candidates,
+        )
+
+        if not path_suffixes:
+            return []
+
+        origin = _origin_url(
+            base_url
+        )
+
+        source = (
+            same_host_candidates[0].source
+            if same_host_candidates
+            else "wordlist"
+        )
+
+        seen_candidate_urls = {
+            candidate.url
+            for candidate in same_host_candidates
+        }
+
+        seen_result_urls: set[str] = set()
+
+        all_results: list[ContentProbe] = []
+        completed = 0
+        planned_total = len(
+            same_host_candidates
+        )
+
+        current_candidates = same_host_candidates
+
+        for current_depth in range(
+            config.depth_limit + 1
+        ):
+            if not current_candidates:
+                break
+
+            level_results, completed = (
+                await _probe_candidate_batch(
+                    client=client,
+                    candidates=current_candidates,
+                    baselines=baselines,
+                    config=config,
+                    rate_limiter=rate_limiter,
+                    progress_callback=progress_callback,
+                    completed_count=completed,
+                    total_count=planned_total,
                 )
             )
 
-        except httpx.RequestError:
-            return []
+            for result in level_results:
+                if result.url in seen_result_urls:
+                    continue
 
-        queue: asyncio.Queue[
-            URLCandidate | None
-        ] = asyncio.Queue(
-            maxsize=config.concurrency * 4
-        )
+                seen_result_urls.add(
+                    result.url
+                )
 
-        async def worker() -> None:
-            nonlocal completed
+                all_results.append(
+                    result
+                )
 
-            while True:
-                candidate = await queue.get()
+            if current_depth >= config.depth_limit:
+                break
 
-                try:
-                    if candidate is None:
-                        return
+            directory_urls: list[str] = []
+            seen_directory_urls: set[str] = set()
 
-                    result = await _probe_path(
-                        client=client,
-                        candidate=candidate,
-                        baselines=baselines,
-                        config=config,
-                    )
+            for result in level_results:
+                directory_url = _result_directory_url(
+                    result,
+                    origin,
+                )
 
-                    if result is not None:
-                        results.append(
-                            result
-                        )
+                if directory_url is None:
+                    continue
 
-                    completed += 1
+                if directory_url in seen_directory_urls:
+                    continue
 
-                    if progress_callback:
-                        progress_callback(
-                            completed,
-                            total_candidates,
-                            candidate.url,
-                        )
+                seen_directory_urls.add(
+                    directory_url
+                )
 
-                finally:
-                    queue.task_done()
+                directory_urls.append(
+                    directory_url
+                )
 
-        worker_count = min(
-            config.concurrency,
-            total_candidates,
-        )
+            if not directory_urls:
+                break
 
-        workers = [
-            asyncio.create_task(
-                worker()
-            )
-            for _ in range(
-                worker_count
-            )
-        ]
-
-        for candidate in same_host_candidates:
-            await queue.put(
-                candidate
+            next_depth = (
+                current_depth
+                + 1
             )
 
-        for _ in workers:
-            await queue.put(
-                None
+            current_candidates = (
+                _build_recursive_candidates(
+                    directory_urls=directory_urls,
+                    path_suffixes=path_suffixes,
+                    source=source,
+                    depth=next_depth,
+                    seen_urls=seen_candidate_urls,
+                )
             )
 
-        await queue.join()
-        await asyncio.gather(
-            *workers
-        )
+            planned_total += len(
+                current_candidates
+            )
 
+
+#
     return sorted(
-        results,
+        all_results,
         key=lambda result: result.url,
     )
-
 
 def discover_wordlist_paths(
     base_url: str,
     candidates: list[URLCandidate],
     timeout: float = 10.0,
     concurrency: int = 40,
+    rate_limit: float | None = None,
     max_response_bytes: int = 16_384,
+    min_response_size: int | None = None,
+    max_response_size: int | None = None,    
+    depth_limit: int = 0,
+
     progress_callback: ProgressCallback | None = None,
 ) -> list[ContentProbe]:
+
     """Synchronous wrapper for the CLI application."""
 
     try:
@@ -787,15 +1435,20 @@ def discover_wordlist_paths(
                 candidates=candidates,
                 timeout=timeout,
                 concurrency=concurrency,
+                rate_limit=rate_limit,
                 max_response_bytes=max_response_bytes,
+                min_response_size=min_response_size,
+                max_response_size=max_response_size,
+                depth_limit=depth_limit,
                 progress_callback=progress_callback,
             )
         )
 
     except KeyboardInterrupt as exc:
         raise PathDiscoveryInterrupted(
-            []
+            [],
         ) from exc
+
 
 
 def filter_interesting_wordlist_results(

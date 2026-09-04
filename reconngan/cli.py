@@ -88,6 +88,45 @@ def positive_int(value: str) -> int:
         )
 
     return number
+
+def positive_float(
+    value: str,
+) -> float:
+    try:
+        number = float(
+            value
+        )
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be a number"
+        ) from exc
+
+    if number <= 0:
+        raise argparse.ArgumentTypeError(
+            "must be greater than 0"
+        )
+
+    return number
+
+def non_negative_int(
+    value: str,
+) -> int:
+    try:
+        number = int(
+            value
+        )
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be an integer"
+        ) from exc
+
+    if number < 0:
+        raise argparse.ArgumentTypeError(
+            "must be greater than or equal to 0"
+        )
+
+    return number
+
 def wordlist_limit_int(
     value: str,
 ) -> int:
@@ -102,6 +141,88 @@ def wordlist_limit_int(
         )
 
     return number
+
+def depth_int(
+    value: str,
+) -> int:
+    try:
+        number = int(
+            value
+        )
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be an integer"
+        ) from exc
+
+    if number < 0:
+        raise argparse.ArgumentTypeError(
+            "must be greater than or equal to 0"
+        )
+
+    if number > 3:
+        raise argparse.ArgumentTypeError(
+            "depth must not exceed 3"
+        )
+
+    return number
+
+def extension_list(
+    value: str,
+) -> tuple[str, ...]:
+    extensions: list[str] = []
+    seen: set[str] = set()
+
+    for raw_extension in value.split(","):
+        extension = (
+            raw_extension
+            .strip()
+            .lower()
+            .lstrip(".")
+        )
+
+        if not extension:
+            continue
+
+        if any(
+            character in extension
+            for character in (
+                "/",
+                "\\",
+                "?",
+                "#",
+                ":",
+                "*",
+                " ",
+            )
+        ):
+            raise argparse.ArgumentTypeError(
+                f"invalid extension: {raw_extension!r}"
+            )
+
+        if extension in seen:
+            continue
+
+        seen.add(
+            extension
+        )
+
+        extensions.append(
+            extension
+        )
+
+    if not extensions:
+        raise argparse.ArgumentTypeError(
+            "at least one extension is required"
+        )
+
+    if len(extensions) > 20:
+        raise argparse.ArgumentTypeError(
+            "extensions must not exceed 20 values"
+        )
+
+    return tuple(
+        extensions
+    )
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -141,7 +262,7 @@ def parse_args():
         "-v",
         "--version",
         action="version",
-        version="ReConngan 0.1.6",
+        version="ReConngan 0.2.1",
     )
 
     # =========================================================
@@ -172,6 +293,18 @@ def parse_args():
     )
 
     network_group.add_argument(
+        "--rate",
+        type=positive_float,
+        default=None,
+        metavar="RPS",
+        help=(
+            "Maximum active path discovery request rate "
+            "in requests per second "
+            "(default: unlimited)"
+        ),
+    )
+
+    network_group.add_argument(
         "--max-response-bytes",
         type=positive_int,
         default=16_384,
@@ -179,6 +312,27 @@ def parse_args():
         help=(
             "Maximum response bytes sampled per discovered path "
             "(default: 16384)"
+        ),
+    )
+    network_group.add_argument(
+        "--min-response-size",
+        type=non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "Only keep active path discovery results "
+            "with response size greater than or equal to N bytes."
+        ),
+    )
+
+    network_group.add_argument(
+        "--max-response-size",
+        type=non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "Only keep active path discovery results "
+            "with response size less than or equal to N bytes."
         ),
     )
 
@@ -220,6 +374,16 @@ def parse_args():
     )
 
     recon_group.add_argument(
+        "--http-intel",
+        dest="http_intel",
+        action="store_true",
+        help=(
+            "Inspect HTTP technology hints, API indicators, "
+            "authentication surface, and interesting metadata."
+        ),
+    )
+
+    recon_group.add_argument(
         "--check-tls",
         dest="tls",
         action="store_true",
@@ -244,7 +408,14 @@ def parse_args():
             "N hostnames (default: 50)."
         ),
     )
-
+    recon_group.add_argument(
+        "--dns-records",
+        action="store_true",
+        help=(
+            "Query DNS records for the target domain "
+            "(A, AAAA, CNAME, MX, NS, TXT)"
+        ),
+    )
     recon_group.add_argument(
         "--check-services",
         dest="services",
@@ -330,6 +501,31 @@ def parse_args():
     )
 
     recon_group.add_argument(
+        "-x",
+        "--extensions",
+        type=extension_list,
+        default=(),
+        metavar="EXTS",
+        help=(
+            "Expand extensionless wordlist paths with "
+            "comma-separated extensions, for example "
+            "php,html,json,txt. Requires --discover-paths."
+        ),
+    )
+
+    recon_group.add_argument(
+        "--depth",
+        type=depth_int,
+        default=0,
+        metavar="N",
+        help=(
+            "Recursively scan discovered directories "
+            "up to N levels. 0 disables recursion. "
+            "Requires --discover-paths."
+        ),
+    )
+
+    recon_group.add_argument(
         "--wordlist-limit",
         dest="wordlist_limit",
         type=wordlist_limit_int,
@@ -373,6 +569,7 @@ def parse_args():
 
     output_group.add_argument(
         "--minimum-grade",
+        dest="fail_under",
         type=str.upper,
         choices=[
             "A",
@@ -388,5 +585,37 @@ def parse_args():
         ),
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
 
+    if args.extensions and args.wordlist is None:
+        parser.error(
+            "--extensions requires --discover-paths FILE"
+        )
+
+    if args.depth > 0 and args.wordlist is None:
+        parser.error(
+            "--depth requires --discover-paths FILE"
+        )
+
+    size_filter_requested = (
+        args.min_response_size is not None
+        or args.max_response_size is not None
+    )
+
+    if size_filter_requested and args.wordlist is None:
+        parser.error(
+            "--min-response-size/--max-response-size "
+            "require --discover-paths FILE"
+        )
+
+    if (
+        args.min_response_size is not None
+        and args.max_response_size is not None
+        and args.min_response_size > args.max_response_size
+    ):
+        parser.error(
+            "--min-response-size must be less than "
+            "or equal to --max-response-size"
+        )
+
+    return args

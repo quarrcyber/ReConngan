@@ -4,10 +4,18 @@
     "status_code": 200,
     "http": {
         "http_version": "HTTP/1.1",
-        "response_time_ms": 424.707,
+        "response_time_ms": 778.226,
         "content_type": "text/html; charset=utf-8",
         "content_length": "Not provided"
     },
+    "tls": null,
+    "hostname_candidates": [
+        {
+            "hostname": "github.com",
+            "source": "target",
+            "certificate_fingerprint": ""
+        }
+    ],
     "score": 90.0,
     "grade": "A",
     "findings": [
@@ -66,31 +74,255 @@
             "evidence": "Content-Security-Policy: default-src 'none'; base-uri 'self'; child-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/; connect-src 'self' uploads.github.com www.githubstatus.com collector.github.com raw.githubusercontent.com api.github.com github-cloud.s3.amazonaws.com github-production-repository-file-5c1aeb.s3.amazonaws.com github-production-upload-manifest-file-7fdce7.s3.amazonaws.com github-production-user-asset-6210df.s3.amazonaws.com *.rel.tunnels.api.visualstudio.com wss://*.rel.tunnels.api.visualstudio.com github.githubassets.com objects-origin.githubusercontent.com copilot-proxy.githubusercontent.com proxy.individual.githubcopilot.com proxy.business.githubcopilot.com proxy.enterprise.githubcopilot.com *.actions.githubusercontent.com wss://*.actions.githubusercontent.com productionresultssa0.blob.core.windows.net productionresultssa1.blob.core.windows.net productionresultssa2.blob.core.windows.net productionresultssa3.blob.core.windows.net productionresultssa4.blob.core.windows.net productionresultssa5.blob.core.windows.net productionresultssa6.blob.core.windows.net productionresultssa7.blob.core.windows.net productionresultssa8.blob.core.windows.net productionresultssa9.blob.core.windows.net productionresultssa10.blob.core.windows.net productionresultssa11.blob.core.windows.net productionresultssa12.blob.core.windows.net productionresultssa13.blob.core.windows.net productionresultssa14.blob.core.windows.net productionresultssa15.blob.core.windows.net productionresultssa16.blob.core.windows.net productionresultssa17.blob.core.windows.net productionresultssa18.blob.core.windows.net productionresultssa19.blob.core.windows.net github-production-repository-image-32fea6.s3.amazonaws.com github-production-release-asset-2e65be.s3.amazonaws.com insights.github.com wss://alive.github.com wss://alive-staging.github.com api.githubcopilot.com api.individual.githubcopilot.com api.business.githubcopilot.com api.enterprise.githubcopilot.com wss://production-copilot-host.webpubsub.azure.com edge.fullstory.com rs.fullstory.com; font-src github.githubassets.com; form-action 'self' github.com gist.github.com copilot-workspace.githubnext.com objects-origin.githubusercontent.com; frame-ancestors 'none'; frame-src viewscreen.githubusercontent.com notebooks.githubusercontent.com www.youtube-nocookie.com; img-src 'self' data: blob: github.githubassets.com media.githubusercontent.com camo.githubusercontent.com identicons.github.com avatars.githubusercontent.com private-avatars.githubusercontent.com github-cloud.s3.amazonaws.com objects.githubusercontent.com release-assets.githubusercontent.com secured-user-images.githubusercontent.com user-images.githubusercontent.com private-user-images.githubusercontent.com opengraph.githubassets.com repository-images.githubusercontent.com marketplace-screenshots.githubusercontent.com copilotprodattachments.blob.core.windows.net/github-production-copilot-attachments/ github-production-user-asset-6210df.s3.amazonaws.com customer-stories-feed.github.com spotlights-feed.github.com explore-feed.github.com objects-origin.githubusercontent.com *.githubusercontent.com images.ctfassets.net/8aevphvgewt8/; manifest-src 'self'; media-src github.com user-images.githubusercontent.com secured-user-images.githubusercontent.com private-user-images.githubusercontent.com github-production-user-asset-6210df.s3.amazonaws.com gist.github.com github.githubassets.com assets.ctfassets.net/8aevphvgewt8/ videos.ctfassets.net/8aevphvgewt8/; script-src github.githubassets.com; style-src 'unsafe-inline' github.githubassets.com; upgrade-insecure-requests; worker-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/"
         }
     ],
-    "cookies": [
+    "cookies": [],
+    "cookie_findings": [],
+    "web_resources": [],
+    "web_discovery": {
+        "robots": null,
+        "sitemap": null,
+        "security_txt": null,
+        "candidates": []
+    },
+    "dns_records": [
         {
-            "name": "_gh_sess",
-            "secure": true,
-            "httponly": true,
-            "samesite": "Lax",
-            "path": "/",
-            "domain": null
+            "hostname": "github.com",
+            "record_type": "A",
+            "values": [
+                "20.205.243.166"
+            ],
+            "error": null
         },
         {
-            "name": "_octo",
-            "secure": true,
-            "httponly": false,
-            "samesite": "Lax",
-            "path": "/",
-            "domain": ".github.com"
+            "hostname": "github.com",
+            "record_type": "AAAA",
+            "values": [],
+            "error": "NOANSWER"
         },
         {
-            "name": "logged_in",
-            "secure": true,
-            "httponly": true,
-            "samesite": "Lax",
-            "path": "/",
-            "domain": ".github.com"
+            "hostname": "github.com",
+            "record_type": "CNAME",
+            "values": [],
+            "error": "NOANSWER"
+        },
+        {
+            "hostname": "github.com",
+            "record_type": "MX",
+            "values": [
+                "0 github-com.mail.protection.outlook.com."
+            ],
+            "error": null
+        },
+        {
+            "hostname": "github.com",
+            "record_type": "NS",
+            "values": [
+                "dns1.p08.nsone.net.",
+                "dns2.p08.nsone.net.",
+                "dns3.p08.nsone.net.",
+                "dns4.p08.nsone.net.",
+                "ns-1283.awsdns-32.org.",
+                "ns-1707.awsdns-21.co.uk.",
+                "ns-421.awsdns-52.com.",
+                "ns-520.awsdns-01.net."
+            ],
+            "error": null
+        },
+        {
+            "hostname": "github.com",
+            "record_type": "TXT",
+            "values": [
+                "\"00Dd0000000hHE0=1TBKg000000TN2r\"",
+                "\"MS=6BF03E6AF5CB689E315FB6199603BABF2C88D805\"",
+                "\"MS=ms44452932\"",
+                "\"MS=ms58704441\"",
+                "\"TAILSCALE-xOzoDvFUzZr5YYVCQFuD\"",
+                "\"adobe-idp-site-verification=b92c9e999aef825edc36e0a3d847d2dbad5b2fc0e05c79ddd7a16139b48ecf4b\"",
+                "\"anthropic-domain-verification-4az7qn=if8YWuRRqwLycGJDooumzHtxm\"",
+                "\"apple-domain-verification=RyQhdzTl6Z6x8ZP4\"",
+                "\"atlassian-domain-verification=jjgw98AKv2aeoYFxiL/VFaoyPkn3undEssTRuMg6C/3Fp/iqhkV4HVV7WjYlVeF8\"",
+                "\"calendly-site-verification=at0DQARi7IZvJtXQAWhMqpmIzpvoBNF7aam5VKKxP\"",
+                "\"cursor-domain-verification-gtfwmt=1rfLOtiTngX5QSxD5HvNKTvm3\"",
+                "\"docusign=087098e3-3d46-47b7-9b4e-8a23028154cd\"",
+                "\"facebook-domain-verification=39xu4jzl7roi7x0n93ldkxjiaarx50\"",
+                "\"google-site-verification=82Le34Flgtd15ojYhHlGF_6g72muSjamlMVThBOJpks\"",
+                "\"google-site-verification=UTM-3akMgubp6tQtgEuAkYNYLyYAvpTnnSrDMWoDR3o\"",
+                "\"jamf-site-verification=XtaPNIYghF_e_xRDI8CjgQ\"",
+                "\"krisp-domain-verification=ZlyiK7XLhnaoUQb2hpak1PLY7dFkl1WE\"",
+                "\"loom-site-verification=f3787154f1154b7880e720a511ea664d\"",
+                "\"miro-verification=d2e174fdb00c71e0bcf58f8e58c3da2dd80dcfa9\"",
+                "\"openai-domain-verification=dv-3nh33eQwdkotMIAzLrIDVZo1\"",
+                "\"serval-domain-verification-ydryhj=qbkiEakpwEpTvHh5fIiCqtaue\"",
+                "\"shopify-verification-code=t1YPwcmvnxZyBycaCpk1MPyWoFs72o\"",
+                "\"stripe-verification=f88ef17321660a01bab1660454192e014defa29ba7b8de9633c69d6b4912217f\"",
+                "\"v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.2\" \"27.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all\""
+            ],
+            "error": null
+        },
+        {
+            "hostname": "_dmarc.github.com",
+            "record_type": "DMARC",
+            "values": [
+                "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
+            ],
+            "error": null
         }
     ],
-    "cookie_findings": []
+    "dns_intelligence": {
+        "hostname": "github.com",
+        "records": [
+            {
+                "hostname": "github.com",
+                "record_type": "A",
+                "values": [
+                    "20.205.243.166"
+                ],
+                "error": null
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "AAAA",
+                "values": [],
+                "error": "NOANSWER"
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "CNAME",
+                "values": [],
+                "error": "NOANSWER"
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "MX",
+                "values": [
+                    "0 github-com.mail.protection.outlook.com."
+                ],
+                "error": null
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "NS",
+                "values": [
+                    "dns1.p08.nsone.net.",
+                    "dns2.p08.nsone.net.",
+                    "dns3.p08.nsone.net.",
+                    "dns4.p08.nsone.net.",
+                    "ns-1283.awsdns-32.org.",
+                    "ns-1707.awsdns-21.co.uk.",
+                    "ns-421.awsdns-52.com.",
+                    "ns-520.awsdns-01.net."
+                ],
+                "error": null
+            },
+            {
+                "hostname": "github.com",
+                "record_type": "TXT",
+                "values": [
+                    "\"00Dd0000000hHE0=1TBKg000000TN2r\"",
+                    "\"MS=6BF03E6AF5CB689E315FB6199603BABF2C88D805\"",
+                    "\"MS=ms44452932\"",
+                    "\"MS=ms58704441\"",
+                    "\"TAILSCALE-xOzoDvFUzZr5YYVCQFuD\"",
+                    "\"adobe-idp-site-verification=b92c9e999aef825edc36e0a3d847d2dbad5b2fc0e05c79ddd7a16139b48ecf4b\"",
+                    "\"anthropic-domain-verification-4az7qn=if8YWuRRqwLycGJDooumzHtxm\"",
+                    "\"apple-domain-verification=RyQhdzTl6Z6x8ZP4\"",
+                    "\"atlassian-domain-verification=jjgw98AKv2aeoYFxiL/VFaoyPkn3undEssTRuMg6C/3Fp/iqhkV4HVV7WjYlVeF8\"",
+                    "\"calendly-site-verification=at0DQARi7IZvJtXQAWhMqpmIzpvoBNF7aam5VKKxP\"",
+                    "\"cursor-domain-verification-gtfwmt=1rfLOtiTngX5QSxD5HvNKTvm3\"",
+                    "\"docusign=087098e3-3d46-47b7-9b4e-8a23028154cd\"",
+                    "\"facebook-domain-verification=39xu4jzl7roi7x0n93ldkxjiaarx50\"",
+                    "\"google-site-verification=82Le34Flgtd15ojYhHlGF_6g72muSjamlMVThBOJpks\"",
+                    "\"google-site-verification=UTM-3akMgubp6tQtgEuAkYNYLyYAvpTnnSrDMWoDR3o\"",
+                    "\"jamf-site-verification=XtaPNIYghF_e_xRDI8CjgQ\"",
+                    "\"krisp-domain-verification=ZlyiK7XLhnaoUQb2hpak1PLY7dFkl1WE\"",
+                    "\"loom-site-verification=f3787154f1154b7880e720a511ea664d\"",
+                    "\"miro-verification=d2e174fdb00c71e0bcf58f8e58c3da2dd80dcfa9\"",
+                    "\"openai-domain-verification=dv-3nh33eQwdkotMIAzLrIDVZo1\"",
+                    "\"serval-domain-verification-ydryhj=qbkiEakpwEpTvHh5fIiCqtaue\"",
+                    "\"shopify-verification-code=t1YPwcmvnxZyBycaCpk1MPyWoFs72o\"",
+                    "\"stripe-verification=f88ef17321660a01bab1660454192e014defa29ba7b8de9633c69d6b4912217f\"",
+                    "\"v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.2\" \"27.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all\""
+                ],
+                "error": null
+            },
+            {
+                "hostname": "_dmarc.github.com",
+                "record_type": "DMARC",
+                "values": [
+                    "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
+                ],
+                "error": null
+            }
+        ],
+        "cname_chain": [
+            "github.com"
+        ],
+        "nameservers": [
+            "dns1.p08.nsone.net.",
+            "dns2.p08.nsone.net.",
+            "dns3.p08.nsone.net.",
+            "dns4.p08.nsone.net.",
+            "ns-1283.awsdns-32.org.",
+            "ns-1707.awsdns-21.co.uk.",
+            "ns-421.awsdns-52.com.",
+            "ns-520.awsdns-01.net."
+        ],
+        "mail_exchangers": [
+            "0 github-com.mail.protection.outlook.com."
+        ],
+        "txt_records": [
+            "00Dd0000000hHE0=1TBKg000000TN2r",
+            "MS=6BF03E6AF5CB689E315FB6199603BABF2C88D805",
+            "MS=ms44452932",
+            "MS=ms58704441",
+            "TAILSCALE-xOzoDvFUzZr5YYVCQFuD",
+            "adobe-idp-site-verification=b92c9e999aef825edc36e0a3d847d2dbad5b2fc0e05c79ddd7a16139b48ecf4b",
+            "anthropic-domain-verification-4az7qn=if8YWuRRqwLycGJDooumzHtxm",
+            "apple-domain-verification=RyQhdzTl6Z6x8ZP4",
+            "atlassian-domain-verification=jjgw98AKv2aeoYFxiL/VFaoyPkn3undEssTRuMg6C/3Fp/iqhkV4HVV7WjYlVeF8",
+            "calendly-site-verification=at0DQARi7IZvJtXQAWhMqpmIzpvoBNF7aam5VKKxP",
+            "cursor-domain-verification-gtfwmt=1rfLOtiTngX5QSxD5HvNKTvm3",
+            "docusign=087098e3-3d46-47b7-9b4e-8a23028154cd",
+            "facebook-domain-verification=39xu4jzl7roi7x0n93ldkxjiaarx50",
+            "google-site-verification=82Le34Flgtd15ojYhHlGF_6g72muSjamlMVThBOJpks",
+            "google-site-verification=UTM-3akMgubp6tQtgEuAkYNYLyYAvpTnnSrDMWoDR3o",
+            "jamf-site-verification=XtaPNIYghF_e_xRDI8CjgQ",
+            "krisp-domain-verification=ZlyiK7XLhnaoUQb2hpak1PLY7dFkl1WE",
+            "loom-site-verification=f3787154f1154b7880e720a511ea664d",
+            "miro-verification=d2e174fdb00c71e0bcf58f8e58c3da2dd80dcfa9",
+            "openai-domain-verification=dv-3nh33eQwdkotMIAzLrIDVZo1",
+            "serval-domain-verification-ydryhj=qbkiEakpwEpTvHh5fIiCqtaue",
+            "shopify-verification-code=t1YPwcmvnxZyBycaCpk1MPyWoFs72o",
+            "stripe-verification=f88ef17321660a01bab1660454192e014defa29ba7b8de9633c69d6b4912217f",
+            "v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.227.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all"
+        ],
+        "spf_records": [
+            "v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.227.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all"
+        ],
+        "dmarc_records": [
+            "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
+        ],
+        "findings": [
+            {
+                "check": "spf-record",
+                "status": "OK",
+                "severity": "LOW",
+                "note": "SPF record found.",
+                "evidence": "v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.227.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all"
+            },
+            {
+                "check": "dmarc-policy",
+                "status": "OK",
+                "severity": "LOW",
+                "note": "DMARC policy is enforcement-oriented.",
+                "evidence": "v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1"
+            }
+        ]
+    },
+    "dns_validation": [],
+    "service_validation": [],
+    "content_discovery": [],
+    "wordlist_discovery": {
+        "candidates": [],
+        "results": []
+    }
 }

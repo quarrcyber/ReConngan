@@ -1,6 +1,9 @@
 import json
 import httpx
 import time
+from urllib.parse import urlsplit, urljoin
+from pathlib import Path
+
 
 from rich.console import Console
 from rich.markup import escape
@@ -30,6 +33,7 @@ from .reporting import (
     console,
     print_target_info,
     print_http_metadata,
+    print_http_intelligence,
     print_http_cookies,
     print_cookie_findings,
     print_redirect_chain,
@@ -42,10 +46,12 @@ from .reporting import (
     print_url_candidates,
     print_content_results,
     print_path_discovery_results,
+
     print_tls_info,
     print_dns_resolutions,
+    print_dns_intelligence,
     print_service_probes,
-
+    print_dns_records,
 )
 from .network import (
     normalize_url,
@@ -55,6 +61,7 @@ from .network import (
 from .cli import parse_args
 from .http_recon import (
     collect_http_metadata,
+    collect_http_intelligence,
     collect_http_cookies,
     collect_redirect_chain,
     analyze_cookie_security,
@@ -75,6 +82,7 @@ from .wordlist_discovery import (
     build_wordlist_candidates,
     filter_interesting_wordlist_results,
     discover_wordlist_paths,
+    expand_wordlist_entries,
     load_wordlist,
     merge_url_candidates,
 )
@@ -85,13 +93,18 @@ from .tls_recon import (
     collect_tls_hostname_candidates,
     probe_tls,
 )
-from .dns_recon import (
-    resolve_hostname_candidates,
-)
 from .service_recon import (
     probe_resolved_host_services,
 )
-
+from .dns_recon import (
+    DEFAULT_DNS_RECORD_TYPES,
+    DNS_INTELLIGENCE_QUERY_COUNT,
+    build_target_hostname_candidate,
+    collect_dns_intelligence,
+    merge_hostname_candidates,
+    query_dns_records,
+    resolve_hostname_candidates,
+)
 
 
 #console
@@ -105,6 +118,9 @@ def main() -> int:
     target = args.target
     url = normalize_url(target)
 
+    target_hostname = urlsplit(
+        url
+    ).hostname
     # =========================================================
     # 1. FETCH MAIN TARGET
     # =========================================================
@@ -150,6 +166,15 @@ def main() -> int:
     print_http_metadata(
         http_metadata
     )
+    if args.http_intel or args.all_modules:
+        http_intelligence = collect_http_intelligence(
+            response
+        )
+
+        print_http_intelligence(
+            http_intelligence
+        )
+
 
     # =========================================================
     # 4. CORE: SECURITY HEADERS
@@ -200,10 +225,26 @@ def main() -> int:
     wordlist_candidates = []
     wordlist_results = []
 
+
+    http_intelligence = None
     tls_result = None
-    hostname_candidates = []
+
+    target_candidate = build_target_hostname_candidate(
+        target_hostname
+    )
+
+    hostname_candidates = (
+        [target_candidate]
+        if target_candidate is not None
+        else []
+    )
+
+    dns_records = []
     dns_resolutions = []
+    dns_intelligence = None
     service_probes = []
+
+
 
 
     scan_interrupted = False
@@ -231,12 +272,18 @@ def main() -> int:
                 timeout=args.timeout,
             )
 
-            hostname_candidates = (
+            tls_hostname_candidates = (
                 collect_tls_hostname_candidates(
                     tls_result
                 )
             )
 
+            hostname_candidates = (
+                merge_hostname_candidates(
+                    hostname_candidates,
+                    tls_hostname_candidates,
+                )
+            )
         except (
             ValueError,
             TLSProbeError,
@@ -358,7 +405,84 @@ def main() -> int:
                 f"in {dns_elapsed:.2f}s"
                 f"[/dim]"
             )
+    # =========================================================
+    # OPTIONAL: DNS RECORD ENUMERATION
+    # =========================================================
 
+    if args.dns_records or args.all_modules:
+
+        if not target_hostname:
+            console.print(
+                "\n[red][!] Unable to determine target "
+                "hostname for DNS records.[/red]"
+            )
+            return 2
+
+        dns_records_started = (
+            time.perf_counter()
+        )
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(
+                "[cyan]{task.description}[/cyan]"
+            ),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task_id = progress.add_task(
+                "DNS records",
+                total=DNS_INTELLIGENCE_QUERY_COUNT,
+            )
+
+            def update_dns_records_progress(
+                completed: int,
+                total: int,
+                current: str,
+            ) -> None:
+                progress.update(
+                    task_id,
+                    completed=completed,
+                    total=total,
+                    description=(
+                        f"DNS record {current}"
+                    ),
+                )
+
+            dns_intelligence = collect_dns_intelligence(
+                hostname=target_hostname,
+                timeout=args.timeout,
+                progress_callback=(
+                    update_dns_records_progress
+                ),
+            )
+
+            dns_records = dns_intelligence.records
+
+        dns_records_elapsed = (
+            time.perf_counter()
+            - dns_records_started
+        )
+
+        print_dns_records(
+            dns_records
+        )
+
+        print_dns_intelligence(
+            dns_intelligence
+        )
+
+        console.print(
+            "\n[green][+] DNS records "
+            "completed.[/green] "
+            f"[dim]"
+           f"{DNS_INTELLIGENCE_QUERY_COUNT} query step(s) "
+            f"in {dns_records_elapsed:.2f}s"
+            f"[/dim]"
+        )
     # =========================================================
     # OPTIONAL: SERVICE VALIDATION
     # =========================================================
@@ -607,6 +731,18 @@ def main() -> int:
                 file_path=wordlist_file,
                 limit=args.wordlist_limit,
             )
+            base_wordlist_count = len(
+                wordlist_entries
+            )
+
+            wordlist_entries = expand_wordlist_entries(
+                entries=wordlist_entries,
+                extensions=args.extensions,
+            )
+
+            expanded_wordlist_count = len(
+                wordlist_entries
+            )
 
         except WordlistLoadError as exc:
             console.print(
@@ -634,14 +770,32 @@ def main() -> int:
             )
             return 2
 
-        console.print(
-            "\n[dim]"
-            f"Wordlist: "
-            f"{len(wordlist_candidates)} "
-            f"candidate(s) loaded from "
-            f"{escape(wordlist_source)}"
-            f"[/dim]"
-        )
+        if args.extensions:
+            extension_text = ",".join(
+                args.extensions
+            )
+
+            console.print(
+                "\n[dim]"
+                f"Wordlist: "
+                f"{base_wordlist_count} base path(s), "
+                f"{expanded_wordlist_count} expanded path(s), "
+                f"{len(wordlist_candidates)} URL candidate(s), "
+                f"extensions={escape(extension_text)}, "
+                f"source={escape(wordlist_source)}"
+                f"[/dim]"
+            )
+        else:
+            console.print(
+                "\n[dim]"
+                f"Wordlist: "
+                f"{len(wordlist_candidates)} "
+                f"candidate(s) loaded from "
+                f"{escape(wordlist_source)}"
+                f"[/dim]"
+            )
+
+
     # =========================================================
     # OPTIONAL OUTPUT: URL CANDIDATES
     # =========================================================
@@ -795,13 +949,23 @@ def main() -> int:
                     candidates=wordlist_candidates,
                     timeout=args.timeout,
                     concurrency=args.concurrency,
+                    rate_limit=args.rate,
                     max_response_bytes=(
                         args.max_response_bytes
                     ),
+                    min_response_size=(
+                        args.min_response_size
+                    ),
+                    max_response_size=(
+                        args.max_response_size
+                    ),
+                    depth_limit=args.depth,
                     progress_callback=(
                         update_path_progress
                     ),
                 )
+
+
 
         except PathDiscoveryInterrupted as exc:
             wordlist_results = exc.results
@@ -824,21 +988,49 @@ def main() -> int:
                 "[/dim]"
             )
 
+
         if scan_interrupted:
             console.print(
                 "\n[yellow][!] Subdirectory/path discovery "
                 "cancelled by user.[/yellow]"
             )
         else:
+            rate_text = (
+                "unlimited"
+                if args.rate is None
+                else f"{args.rate:g} req/s"
+            )
+            size_filter_parts: list[str] = []
+
+            if args.min_response_size is not None:
+                size_filter_parts.append(
+                    f"min {args.min_response_size}"
+                )
+
+            if args.max_response_size is not None:
+                size_filter_parts.append(
+                    f"max {args.max_response_size}"
+                )
+
+            size_filter_text = (
+                ", ".join(size_filter_parts)
+                if size_filter_parts
+                else "none"
+            )
             console.print(
                 "\n[green][+] Subdirectory/path discovery "
                 "completed.[/green] "
                 f"[dim]"
                 f"{len(wordlist_candidates)} tested, "
-                f"{len(wordlist_results)} found "
+                f"{len(wordlist_results)} found, "
+                f"concurrency {args.concurrency}, "
+                f"depth {args.depth}, "
+                f"rate {rate_text}, "
+                f"size filter {size_filter_text} "
                 f"in {path_elapsed:.2f}s"
                 f"[/dim]"
             )
+
 
     # =========================================================
     # 14. JSON REPORT
@@ -851,6 +1043,7 @@ def main() -> int:
             final_url=str(response.url),
             status_code=response.status_code,
             metadata=http_metadata,
+            http_intelligence=http_intelligence,
             redirect_chain=redirect_chain,
             security_txt=security_txt_info,
             cookies=cookies,
@@ -864,6 +1057,9 @@ def main() -> int:
 
             tls_result=tls_result,
             hostname_candidates=hostname_candidates,
+
+            dns_records=dns_records,
+            dns_intelligence=dns_intelligence,
             dns_resolutions=dns_resolutions,
             service_probes=service_probes,
             findings=findings,
@@ -895,8 +1091,7 @@ def main() -> int:
             f"after {scan_elapsed:.2f}s.[/yellow]"
         )
 
-    return 130
-
+        return 130
 
     if args.fail_under:
         if not grade_meets_threshold(
@@ -922,7 +1117,6 @@ def main() -> int:
     )
 
     return 0
-
 
 
 #===========================================

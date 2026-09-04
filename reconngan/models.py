@@ -47,6 +47,46 @@ class CookieFinding:
     evidence: str
 
 @dataclass
+class HTTPIndicator:
+    category: str
+    name: str
+    confidence: str
+    evidence: str
+
+
+@dataclass
+class HTTPFinding:
+    check: str
+    status: str
+    severity: str
+    note: str
+    evidence: str
+
+
+@dataclass
+class HTTPIntelligence:
+    url: str
+    final_url: str
+    status_code: int
+
+    server: str | None
+    powered_by: str | None
+    via: str | None
+
+    cache_status: str | None
+    content_type: str | None
+
+    technology_hints: list[HTTPIndicator]
+    framework_indicators: list[HTTPIndicator]
+    api_indicators: list[HTTPIndicator]
+    auth_surface: list[HTTPIndicator]
+    metadata: list[HTTPIndicator]
+
+    findings: list[HTTPFinding]
+
+
+
+@dataclass
 class RedirectHop:
     url: str
     status_code: int
@@ -111,6 +151,8 @@ class ContentProbe:
 
     soft_404: bool
     error: str | None
+
+
 # ---------------- TLS Intelligence ----------------
 @dataclass
 class HostnameCandidate:
@@ -130,6 +172,39 @@ class DNSResolution:
     resolved: bool
     errors: list[str]
 @dataclass
+class DNSRecord:
+    hostname: str
+    record_type: str
+    values: list[str]
+    error: str | None
+
+@dataclass
+class DNSFinding:
+    check: str
+    status: str
+    severity: str
+    note: str
+    evidence: str
+
+
+@dataclass
+class DNSIntelligence:
+    hostname: str
+    records: list[DNSRecord]
+
+    cname_chain: list[str]
+    nameservers: list[str]
+    mail_exchangers: list[str]
+    txt_records: list[str]
+    spf_records: list[str]
+    dmarc_records: list[str]
+
+    findings: list[DNSFinding]
+
+
+
+
+@dataclass
 class HostServiceProbe:
     hostname: str
     source: str
@@ -145,6 +220,27 @@ class HostServiceProbe:
     redirected: bool
 
     error: str | None
+
+@dataclass
+class TLSCertificateSummary:
+    subject: str
+    issuer: str
+    serial_number: str
+    sha256_fingerprint: str
+    valid_from: str
+    valid_until: str
+    is_ca: bool | None
+
+
+@dataclass
+class TLSSecurityFinding:
+    check: str
+    status: str
+    severity: str
+    note: str
+    evidence: str
+
+
 @dataclass
 class TLSResult:
     host: str
@@ -169,3 +265,10 @@ class TLSResult:
 
     hostname_match: bool
     warnings: list[str]
+
+    trust_valid: bool
+    trust_error: str | None
+    supported_versions: list[str]
+    weak_protocols: list[str]
+    certificate_chain: list[TLSCertificateSummary]
+    security_findings: list[TLSSecurityFinding]
