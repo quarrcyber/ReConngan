@@ -52,6 +52,7 @@ from .reporting import (
     print_dns_intelligence,
     print_service_probes,
     print_dns_records,
+    print_correlation,
 )
 from .network import (
     normalize_url,
@@ -105,7 +106,9 @@ from .dns_recon import (
     query_dns_records,
     resolve_hostname_candidates,
 )
-
+from .correlation import (
+    correlate_recon_evidence,
+)
 
 #console
 console = Console()
@@ -115,12 +118,75 @@ def main() -> int:
     scan_started = time.perf_counter()
     args = parse_args()
 
+    correlation_requested = (
+        args.correlate
+        or args.all_modules
+    )
+
+    http_intel_requested = (
+        args.http_intel
+        or args.all_modules
+        or correlation_requested
+    )
+
+    tls_requested = (
+        args.tls
+        or args.all_modules
+        or correlation_requested
+    )
+
+    dns_records_requested = (
+        args.dns_records
+        or args.all_modules
+        or correlation_requested
+    )
+
+    dns_validation_requested = (
+        args.resolve_hosts is not None
+        or args.all_modules
+        or correlation_requested
+    )
+
+    service_validation_requested = (
+        args.services is not None
+        or args.all_modules
+        or correlation_requested
+    )
+
+    redirects_requested = (
+        args.redirects
+        or args.all_modules
+        or correlation_requested
+    )
+
+    def option_limit(
+        value: object,
+        default: int,
+    ) -> int:
+        if isinstance(
+            value,
+            bool,
+        ):
+            return default
+
+        if value is None:
+            return default
+
+        return int(
+            value
+        )
+
     target = args.target
-    url = normalize_url(target)
+    url = normalize_url(
+        target
+    )
 
     target_hostname = urlsplit(
         url
     ).hostname
+
+    http_intelligence = None
+
     # =========================================================
     # 1. FETCH MAIN TARGET
     # =========================================================
@@ -166,7 +232,9 @@ def main() -> int:
     print_http_metadata(
         http_metadata
     )
-    if args.http_intel or args.all_modules:
+
+
+    if http_intel_requested:
         http_intelligence = collect_http_intelligence(
             response
         )
@@ -226,7 +294,6 @@ def main() -> int:
     wordlist_results = []
 
 
-    http_intelligence = None
     tls_result = None
 
     target_candidate = build_target_hostname_candidate(
@@ -243,7 +310,7 @@ def main() -> int:
     dns_resolutions = []
     dns_intelligence = None
     service_probes = []
-
+    correlation = None
 
 
 
@@ -254,10 +321,9 @@ def main() -> int:
     # =========================================================
 
     needs_tls_data = (
-        args.tls
-        or args.resolve_hosts is not None
-        or args.services is not None
-        or args.all_modules
+        tls_requested
+        or dns_validation_requested
+        or service_validation_requested
     )
 
     if needs_tls_data:
@@ -294,20 +360,20 @@ def main() -> int:
             )
 
         else:
-            if args.tls or args.all_modules:
+            if tls_requested:
                 print_tls_info(
                     tls_result,
                     hostname_candidates,
                 )
+
 
     # =========================================================
     # OPTIONAL: DNS HOST VALIDATION
     # =========================================================
 
     needs_dns_data = (
-        args.resolve_hosts is not None
-        or args.services is not None
-        or args.all_modules
+        dns_validation_requested
+        or service_validation_requested
     )
 
     if needs_dns_data:
@@ -316,16 +382,30 @@ def main() -> int:
 
         if args.resolve_hosts is not None:
             dns_limits.append(
-                args.resolve_hosts
+                option_limit(
+                    args.resolve_hosts,
+                    50,
+                )
             )
 
         if args.services is not None:
             dns_limits.append(
-                args.services
+                option_limit(
+                    args.services,
+                    25,
+                )
             )
 
-        if args.all_modules:
-            dns_limits.append(50)
+        if correlation_requested or args.all_modules:
+            dns_limits.append(
+                50
+            )
+
+
+        if correlation_requested or args.all_modules:
+            dns_limits.append(
+                50
+            )
 
         dns_limit = max(
             dns_limits,
@@ -389,10 +469,8 @@ def main() -> int:
             - dns_started
         )
 
-        if (
-            args.resolve_hosts is not None
-            or args.all_modules
-        ):
+        if dns_validation_requested:
+
             print_dns_resolutions(
                 dns_resolutions
             )
@@ -409,7 +487,7 @@ def main() -> int:
     # OPTIONAL: DNS RECORD ENUMERATION
     # =========================================================
 
-    if args.dns_records or args.all_modules:
+    if dns_records_requested:
 
         if not target_hostname:
             console.print(
@@ -487,14 +565,11 @@ def main() -> int:
     # OPTIONAL: SERVICE VALIDATION
     # =========================================================
 
-    if (
-        args.services is not None
-        or args.all_modules
-    ):
-        service_limit = (
-            args.services
-            if args.services is not None
-            else 25
+
+    if service_validation_requested:
+        service_limit = option_limit(
+            args.services,
+            25,
         )
 
         service_started = (
@@ -585,11 +660,11 @@ def main() -> int:
     # OPTIONAL: REDIRECT RECONNAISSANCE
     # =========================================================
 
+
     needs_redirect_data = (
-        args.redirects
+        redirects_requested
         or args.candidates
         or args.content is not None
-        or args.all_modules
     )
 
     if needs_redirect_data:
@@ -597,7 +672,7 @@ def main() -> int:
             response
         )
 
-    if args.redirects or args.all_modules:
+    if redirects_requested:
         print_redirect_chain(
             redirect_chain
         )
@@ -1031,6 +1106,26 @@ def main() -> int:
                 f"[/dim]"
             )
 
+    # =========================================================
+    # OPTIONAL: RECON CORRELATION
+    # =========================================================
+
+    if correlation_requested:
+        correlation = correlate_recon_evidence(
+            target=target_hostname or url,
+            tls_result=tls_result,
+            dns_intelligence=dns_intelligence,
+            dns_resolutions=dns_resolutions,
+            hostname_candidates=hostname_candidates,
+            service_probes=service_probes,
+            redirect_chain=redirect_chain,
+            http_intelligence=http_intelligence,
+        )
+
+        print_correlation(
+            correlation
+        )
+
 
     # =========================================================
     # 14. JSON REPORT
@@ -1062,6 +1157,8 @@ def main() -> int:
             dns_intelligence=dns_intelligence,
             dns_resolutions=dns_resolutions,
             service_probes=service_probes,
+
+            correlation=correlation,
             findings=findings,
             score=score,
             grade=grade,

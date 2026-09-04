@@ -538,6 +538,15 @@ def parse_args():
     )
 
     recon_group.add_argument(
+        "--correlate",
+        action="store_true",
+        help=(
+            "Correlate evidence across HTTP, TLS, DNS, "
+            "hostname, service, and redirect modules."
+        ),
+    )
+
+    recon_group.add_argument(
         "--all",
         dest="all_modules",
         action="store_true",
