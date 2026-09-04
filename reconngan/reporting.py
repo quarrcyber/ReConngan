@@ -37,6 +37,7 @@ from .models import (
     DNSResolution,
     DNSIntelligence,
     HostServiceProbe,
+    ReconCorrelation,
 )
 console = Console()
 
@@ -315,6 +316,8 @@ def build_report_data(
     dns_resolutions: list[DNSResolution],
 
     service_probes: list[HostServiceProbe],
+    correlation: ReconCorrelation | None,
+
     score: float,
     grade: str,
 ) -> dict:
@@ -421,11 +424,85 @@ def build_report_data(
                 for result in wordlist_results
             ],
         },
+        "correlation": (
+            asdict(correlation)
+            if correlation is not None
+            else None
+        ),
 
 
 
 
     }
+
+def print_correlation(
+    correlation: ReconCorrelation | None,
+) -> None:
+    if correlation is None:
+        return
+
+    table = Table(
+        title="Recon Correlation",
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column(
+        "Source",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Relationship",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Target",
+        overflow="fold",
+    )
+
+    table.add_column(
+        "Confidence",
+        no_wrap=True,
+    )
+
+    table.add_column(
+        "Evidence",
+        overflow="fold",
+    )
+
+    for relationship in correlation.relationships:
+        table.add_row(
+            escape(relationship.source),
+            escape(relationship.relationship_type),
+            escape(relationship.target),
+            escape(relationship.confidence),
+            escape(relationship.evidence),
+        )
+
+    console.print()
+    console.print(table)
+
+    if not correlation.summary:
+        return
+
+    summary_table = Table(
+        title="Correlation Summary",
+        show_header=False,
+    )
+
+    summary_table.add_column(
+        "Item",
+        overflow="fold",
+    )
+
+    for item in correlation.summary:
+        summary_table.add_row(
+            escape(item)
+        )
+
+    console.print(summary_table)
 
 def write_json_report(
     data: dict,

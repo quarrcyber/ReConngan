@@ -272,3 +272,18 @@ class TLSResult:
     weak_protocols: list[str]
     certificate_chain: list[TLSCertificateSummary]
     security_findings: list[TLSSecurityFinding]
+
+@dataclass
+class ReconRelationship:
+    source: str
+    target: str
+    relationship_type: str
+    confidence: str
+    evidence: str
+
+
+@dataclass
+class ReconCorrelation:
+    target: str
+    relationships: list[ReconRelationship]
+    summary: list[str]
