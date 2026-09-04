@@ -164,7 +164,7 @@ def build_soft404_baseline(
     token = secrets.token_hex(12)
 
     random_path = (
-        f"/reconngan-not-found-{token}"
+        f"/recoongan-not-found-{token}"
     )
 
     url = urljoin(

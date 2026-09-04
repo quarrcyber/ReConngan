@@ -226,26 +226,26 @@ def extension_list(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        prog="reconngan",
+        prog="recoongan",
         description=(
             "Evidence-driven HTTP security "
             "reconnaissance scanner"
         ),
         epilog=(
             "Examples:\n"
-            "  reconngan example.com\n"
-            "  reconngan example.com --dns\n"
-            "  reconngan example.com --target-ip\n"
-            "  reconngan example.com --check-tls\n"
-            "  reconngan example.com --check-cookies\n"
-            "  reconngan example.com --known-files\n"
-            "  reconngan example.com --show-redirects\n"
-            "  reconngan example.com --show-sitemap\n"
-            "  reconngan example.com --show-security-txt\n"
-            "  reconngan example.com --discover-content\n"
-            "  reconngan example.com --discover-paths paths.txt\n"
-            "  reconngan example.com --save-report report.json\n"
-            "  reconngan example.com --all"
+            "  recoongan example.com\n"
+            "  recoongan example.com --dns\n"
+            "  recoongan example.com --target-ip\n"
+            "  recoongan example.com --check-tls\n"
+            "  recoongan example.com --check-cookies\n"
+            "  recoongan example.com --known-files\n"
+            "  recoongan example.com --show-redirects\n"
+            "  recoongan example.com --show-sitemap\n"
+            "  recoongan example.com --show-security-txt\n"
+            "  recoongan example.com --discover-content\n"
+            "  recoongan example.com --discover-paths paths.txt\n"
+            "  recoongan example.com --save-report report.json\n"
+            "  recoongan example.com --all"
         ),
         formatter_class=ReconnganHelpFormatter,
     )
@@ -262,7 +262,7 @@ def parse_args():
         "-v",
         "--version",
         action="version",
-        version="ReConngan 0.2.1",
+        version="ReCoongan 0.2.1",
     )
 
     # =========================================================
